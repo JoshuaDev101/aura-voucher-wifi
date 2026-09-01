@@ -1,20 +1,23 @@
-Aura Web Admin v4 - Live Voucher Status
-=======================================
+Aura Web Admin v5 - Live AP + Connected Client Counts
+=====================================================
+
+Verified against this controller:
+- Omada Controller 5.15.24.19
+- API v3
+- EAP110-Outdoor
 
 What changes:
-- REAL voucher generation remains enabled.
-- Existing Aura SQLite DB is migrated automatically.
-- Adds start_time, end_time, last_sync columns.
-- Dashboard refresh syncs up to 25 non-expired vouchers from Omada.
-- Status is derived from Omada startTime/endTime:
-    startTime == 0 -> Unused
-    started and endTime still in future -> Active
-    endTime reached -> Expired
-- Shows remaining time for active vouchers.
-- Does NOT yet add live AP/client counts.
-- MX06 printer remains the next milestone.
+- Keeps REAL 1/3/7-day Omada voucher generation.
+- Keeps live voucher status / remaining time.
+- Adds live AP online / total count.
+- Adds connected Wi-Fi client count.
+- Uses the verified Omada endpoint:
+    /api/v2/sites/{SITE}/grid/devices
+- "Connected Clients" is calculated from clientNum on currently-online APs.
+  This is preferable to counting /insight/clients because that endpoint can
+  include historical client records.
 
-Merge into the existing repo:
+Merge these files into the repo:
   aura-web/app.py
   aura-web/omada_api.py
   aura-web/templates/dashboard.html
@@ -35,4 +38,9 @@ Then on Orange Pi:
 Open:
   http://192.168.1.124/admin/
 
-Use "Refresh Status" after a voucher is first used.
+Expected with the current test AP/client:
+  Connected Clients: 1
+  AP Online: 1/1
+
+Next milestone:
+  MX06 printer integration.

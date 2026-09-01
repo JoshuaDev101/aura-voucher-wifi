@@ -98,6 +98,65 @@ class OmadaClient:
             raise OmadaError("Omada session is not authenticated.")
         return {"Csrf-Token": self.token}
 
+
+    def get_live_stats(self):
+        if not self.site:
+            raise OmadaError("Site ID not configured.")
+
+        self.login()
+
+        r = self.s.get(
+            f"{self.base}/{self.oid}/api/v2/sites/{self.site}/grid/devices",
+            params={
+                "token": self.token,
+                "currentPage": 1,
+                "currentPageSize": 100,
+            },
+            headers=self._headers(),
+            verify=self.verify,
+            timeout=10,
+        )
+        d = self._json(r, "Live device stats")
+        result = d.get("result") or {}
+        rows = result.get("data", []) if isinstance(result, dict) else []
+
+        aps = [
+            device
+            for device in rows
+            if str(device.get("type", "")).lower() == "ap"
+        ]
+
+        online_aps = [
+            device
+            for device in aps
+            if device.get("statusCategory") == 1
+            or device.get("status") == 14
+        ]
+
+        connected_clients = 0
+        for device in online_aps:
+            try:
+                connected_clients += int(device.get("clientNum") or 0)
+            except (TypeError, ValueError):
+                pass
+
+        return {
+            "ap_total": len(aps),
+            "ap_online": len(online_aps),
+            "connected_clients": connected_clients,
+            "aps": [
+                {
+                    "name": d.get("name"),
+                    "model": d.get("model"),
+                    "ip": d.get("ip"),
+                    "clients": d.get("clientNum"),
+                    "status": d.get("status"),
+                    "status_category": d.get("statusCategory"),
+                }
+                for d in aps
+            ],
+        }
+
     def create_voucher(self, plan_name, minutes):
         if not self.site or not self.rate:
             raise OmadaError("Site ID / Rate Limit ID not configured.")

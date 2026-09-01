@@ -274,7 +274,8 @@ def admin_dashboard():
     for voucher in vouchers:
         voucher["remaining"] = remaining_text(voucher)
 
-    probe = OmadaClient().probe()
+    omada = OmadaClient()
+    probe = omada.probe()
 
     controller = {
         "online": probe["online"],
@@ -283,6 +284,20 @@ def admin_dashboard():
         "omadac_id": probe["omadac_id"],
         "error": probe["error"],
     }
+
+    live = {
+        "ap_total": "—",
+        "ap_online": "—",
+        "connected_clients": "—",
+        "error": None,
+    }
+
+    if probe["online"]:
+        try:
+            stats = omada.get_live_stats()
+            live.update(stats)
+        except Exception as exc:
+            live["error"] = str(exc)
 
     counts = {
         "active": sum(v["status"] == "active" for v in vouchers),
@@ -297,6 +312,7 @@ def admin_dashboard():
         counts=counts,
         plans=PLANS,
         controller=controller,
+        live=live,
         sync_error=sync_error,
     )
 

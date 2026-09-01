@@ -17,7 +17,7 @@
     <div class="topbar">
       <div>
         <h1>Dashboard</h1>
-        <p class="muted">Aura Voucher WiFi • Web Admin v4</p>
+        <p class="muted">Aura Voucher WiFi • Web Admin v5</p>
       </div>
       <div class="pill {{ 'ok' if controller.online else 'bad' }}">
         Controller {{ 'Online' if controller.online else 'Offline' }}
@@ -34,7 +34,13 @@
       <div class="flash error">Voucher sync warning: {{ sync_error }}</div>
     {% endif %}
 
+    {% if live.error %}
+      <div class="flash error">Live AP/client stats warning: {{ live.error }}</div>
+    {% endif %}
+
     <section class="metrics">
+      <div class="card metric"><span>Connected Clients</span><b>{{ live.connected_clients }}</b></div>
+      <div class="card metric"><span>AP Online</span><b>{{ live.ap_online }}/{{ live.ap_total }}</b></div>
       <div class="card metric"><span>Active Vouchers</span><b>{{ counts.active }}</b></div>
       <div class="card metric"><span>Unused Vouchers</span><b>{{ counts.unused }}</b></div>
       <div class="card metric"><span>Expired</span><b>{{ counts.expired }}</b></div>
