@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Aura WiFi · Status{% endblock %}
 {% block body %}
-<div class="status-page">
-  <div class="status-shell">
-    <header class="status-header">
+<div class="customer-page">
+  <div class="customer-shell">
+    <header class="customer-header">
       <div class="brand-lockup">
         <div class="brand-mark">A</div>
         <div>
@@ -11,88 +11,84 @@
           <div class="brand-caption">Voucher WiFi</div>
         </div>
       </div>
-      <span class="status-secure">SESSION STATUS</span>
+      <span class="customer-header-label">WiFi status</span>
     </header>
 
     {% if customer.state == "active" %}
-      <main class="status-main">
-        <div class="connection-state online-state">
-          <span class="connection-dot"></span>CONNECTED
-        </div>
-        <p class="status-overline">TIME REMAINING</p>
-        <div id="remaining-time" class="remaining-time" data-remaining="{{ customer.remaining_seconds }}">--:--:--</div>
-        <p class="status-subcopy">Your access stays active until this timer reaches zero.</p>
+    <main class="customer-main active-customer">
+      <div class="connection-pill online-state"><span class="connection-dot"></span>Connected</div>
+      <div class="customer-grid">
+        <section class="customer-time-card">
+          <p class="status-overline">TIME REMAINING</p>
+          <div id="remaining-time" class="remaining-time" data-remaining="{{ customer.remaining_seconds }}">--:--:--</div>
+          <p class="status-subcopy">Your Aura WiFi access remains active until this timer reaches zero.</p>
+        </section>
+        <aside class="customer-session-card">
+          <div class="session-row"><span>Network</span><strong>{{ customer.ssid }}</strong></div>
+          {% if customer.voucher_code %}<div class="session-row voucher-session"><span>Voucher</span><strong>{{ customer.voucher_code }}</strong></div>{% endif %}
+          <div class="session-row"><span>Status</span><strong class="good-text">Active</strong></div>
+        </aside>
+      </div>
+    </main>
 
-        {% if customer.voucher_code %}
-          <div class="customer-voucher">
-            <span>VOUCHER CODE</span>
-            <strong>{{ customer.voucher_code }}</strong>
-          </div>
-        {% endif %}
-      </main>
-
-      <footer class="status-footer">
-        <span>{{ customer.ssid }}</span>
-        <span>Keep this page open anytime to check your time.</span>
-      </footer>
-
-      <script>
-      (() => {
-        const el = document.getElementById('remaining-time');
-        let seconds = Number(el.dataset.remaining || 0);
-        let timer = null;
-
-        const render = () => {
-          if (seconds <= 0) {
-            el.textContent = 'EXPIRED';
-            el.classList.add('expired-time');
-            if (timer) clearInterval(timer);
-            return;
-          }
-
-          const days = Math.floor(seconds / 86400);
-          const rem = seconds % 86400;
-          const hours = Math.floor(rem / 3600);
-          const minutes = Math.floor((rem % 3600) / 60);
-          const secs = rem % 60;
-          const clock = [hours, minutes, secs].map(v => String(v).padStart(2, '0')).join(':');
-          el.textContent = days > 0 ? `${days}d ${clock}` : clock;
-          seconds -= 1;
-        };
-
-        render();
-        timer = setInterval(render, 1000);
-      })();
-      </script>
+    <script>
+    (() => {
+      const el = document.getElementById('remaining-time');
+      let seconds = Number(el.dataset.remaining || 0);
+      let timer = null;
+      const render = () => {
+        if (seconds <= 0) {
+          el.textContent = 'EXPIRED';
+          el.classList.add('expired-time');
+          if (timer) clearInterval(timer);
+          return;
+        }
+        const days = Math.floor(seconds / 86400);
+        const rem = seconds % 86400;
+        const hours = Math.floor(rem / 3600);
+        const minutes = Math.floor((rem % 3600) / 60);
+        const secs = rem % 60;
+        const clock = [hours, minutes, secs].map(v => String(v).padStart(2, '0')).join(':');
+        el.textContent = days > 0 ? `${days}d ${clock}` : clock;
+        seconds -= 1;
+      };
+      render();
+      timer = setInterval(render, 1000);
+    })();
+    </script>
 
     {% elif customer.state == "expired" %}
-      <main class="status-main">
-        <div class="connection-state expired-state"><span class="connection-dot"></span>SESSION ENDED</div>
-        <p class="status-overline">TIME REMAINING</p>
-        <div class="remaining-time expired-time">EXPIRED</div>
-        <p class="status-subcopy">This voucher has reached the end of its access time.</p>
-        {% if customer.voucher_code %}
-          <div class="customer-voucher"><span>VOUCHER CODE</span><strong>{{ customer.voucher_code }}</strong></div>
-        {% endif %}
-      </main>
+    <main class="customer-main state-message-main">
+      <div class="connection-pill expired-state"><span class="connection-dot"></span>Session ended</div>
+      <p class="status-overline">AURA WIFI</p>
+      <h1>Your time<br>has ended.</h1>
+      <p class="status-subcopy">This voucher has reached the end of its access period.</p>
+      {% if customer.voucher_code %}<div class="ended-code"><span>VOUCHER</span><strong>{{ customer.voucher_code }}</strong></div>{% endif %}
+    </main>
 
     {% elif customer.state == "error" %}
-      <main class="status-main">
-        <div class="connection-state waiting-state"><span class="connection-dot"></span>STATUS TEMPORARILY UNAVAILABLE</div>
-        <h1 class="status-title">Still connected?</h1>
-        <p class="status-subcopy">Refresh this page in a moment to check your remaining time.</p>
-        <a class="status-action" href="/status">Refresh status</a>
-      </main>
+    <main class="customer-main state-message-main">
+      <div class="connection-pill waiting-state"><span class="connection-dot"></span>Status unavailable</div>
+      <p class="status-overline">AURA WIFI</p>
+      <h1>Checking your<br>connection.</h1>
+      <p class="status-subcopy">The controller is taking a little longer to respond. Your WiFi session may still be active.</p>
+      <a class="btn ghost customer-refresh" href="/status">Refresh status</a>
+    </main>
 
     {% else %}
-      <main class="status-main">
-        <div class="connection-state waiting-state"><span class="connection-dot"></span>NOT AUTHENTICATED</div>
-        <p class="status-overline">AURA WIFI</p>
-        <h1 class="status-title">Connect with<br>a voucher.</h1>
-        <p class="status-subcopy">Complete the WiFi voucher portal first. Your remaining time will appear here automatically after authentication.</p>
-        <a class="status-action" href="/status">Check again</a>
-      </main>
+    <main class="customer-main state-message-main">
+      <div class="connection-pill waiting-state"><span class="connection-dot"></span>Voucher required</div>
+      <p class="status-overline">WELCOME TO AURA</p>
+      <h1>Connect.<br>Then stay online.</h1>
+      <p class="status-subcopy">Complete the WiFi voucher portal first. Once authenticated, your remaining time will appear here automatically.</p>
+      <a class="btn ghost customer-refresh" href="/status">Check again</a>
+    </main>
     {% endif %}
+
+    <footer class="customer-footer">
+      <span>Aura Voucher WiFi</span>
+      <span>Simple. Fast. Local.</span>
+    </footer>
   </div>
 </div>
 {% endblock %}

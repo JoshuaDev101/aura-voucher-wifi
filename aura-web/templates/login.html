@@ -5,36 +5,25 @@
   <div class="auth-shell">
     <div class="auth-brand">
       <div class="brand-mark">A</div>
-      <div>
-        <div class="brand-word">AURA</div>
-        <div class="brand-caption">Owner Console</div>
-      </div>
+      <div><div class="brand-word">AURA</div><div class="brand-caption">Owner Console</div></div>
     </div>
-
     <div class="auth-card">
       <div class="eyebrow">PRIVATE ACCESS</div>
-      <h1>Sign in.</h1>
-      <p class="muted">Owner credentials are required to open the control panel.</p>
-
+      <h1>Welcome back.</h1>
+      <p class="muted">Sign in to manage vouchers, network status and Aura system health.</p>
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}
-          <div class="flash {{ category }}">{{ message }}</div>
-        {% endfor %}
+        {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
       {% endwith %}
-
       <form method="post" class="auth-form" autocomplete="on">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label for="username">Username</label>
         <input id="username" name="username" autocomplete="username" required autofocus>
-
         <label for="password">Password</label>
         <input id="password" type="password" name="password" autocomplete="current-password" required>
-
-        <button class="btn primary full" type="submit">Open owner console</button>
+        <button class="btn primary full" type="submit">Open owner console <span>→</span></button>
       </form>
     </div>
-
-    <div class="auth-foot">Private local management portal</div>
+    <div class="auth-foot">Local owner access only</div>
   </div>
 </div>
 {% endblock %}

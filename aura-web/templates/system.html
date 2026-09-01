@@ -1,0 +1,91 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · System{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <div>
+    <div class="eyebrow">SYSTEM HEALTH</div>
+    <h1>System</h1>
+    <p>Controller, access point and Orange Pi health in one view.</p>
+  </div>
+  <a class="btn ghost" href="{{ url_for('admin_system', refresh=1) }}">Refresh live data</a>
+</section>
+
+<section class="system-grid">
+  <article class="panel controller-panel">
+    <div class="system-card-head">
+      <div>
+        <div class="eyebrow">OMADA CONTROLLER</div>
+        <h2>Controller</h2>
+      </div>
+      <span class="large-status {{ 'online' if controller.online else 'offline' }}"><i></i>{{ 'Online' if controller.online else 'Offline' }}</span>
+    </div>
+    <dl class="detail-list spacious">
+      <div><dt>Controller version</dt><dd>{{ controller.version }}</dd></div>
+      <div><dt>API version</dt><dd>v{{ controller.api_version }}</dd></div>
+      <div><dt>Access points</dt><dd>{{ live.ap_online }} / {{ live.ap_total }} online</dd></div>
+      <div><dt>Connected clients</dt><dd>{{ live.connected_clients }}</dd></div>
+      <div><dt>Last live refresh</dt><dd>{{ updated_at }}</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel resources-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">ORANGE PI</div><h2>Resources</h2></div>
+      {% if system.temperature is not none %}<span class="temperature">{{ system.temperature }}°C</span>{% endif %}
+    </div>
+    <div class="resource-list">
+      <div class="resource-row">
+        <div class="resource-copy"><span>CPU load</span><strong>{{ system.load1|round(2) }} / {{ system.cpu_count }} cores</strong></div>
+        <div class="meter"><i style="width:{{ system.load_percent }}%"></i></div>
+        <small>5m {{ system.load5|round(2) }} · 15m {{ system.load15|round(2) }}</small>
+      </div>
+      <div class="resource-row">
+        <div class="resource-copy"><span>Memory</span><strong>{{ system.memory_percent }}%</strong></div>
+        <div class="meter"><i style="width:{{ system.memory_percent }}%"></i></div>
+        <small>{{ system.memory_used }} used of {{ system.memory_total }}</small>
+      </div>
+      <div class="resource-row">
+        <div class="resource-copy"><span>Swap / zram</span><strong>{{ system.swap_percent }}%</strong></div>
+        <div class="meter"><i style="width:{{ system.swap_percent }}%"></i></div>
+        <small>{{ system.swap_used }} used of {{ system.swap_total }}</small>
+      </div>
+      <div class="resource-row">
+        <div class="resource-copy"><span>Storage</span><strong>{{ system.disk_percent }}%</strong></div>
+        <div class="meter"><i style="width:{{ system.disk_percent }}%"></i></div>
+        <small>{{ system.disk_free }} free of {{ system.disk_total }}</small>
+      </div>
+    </div>
+    <div class="uptime-chip">Uptime <strong>{{ system.uptime }}</strong></div>
+  </article>
+</section>
+
+<section class="system-grid secondary-system-grid">
+  <article class="panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">ACCESS POINTS</div><h2>WiFi hardware</h2></div>
+    </div>
+    <div class="ap-list">
+      {% for ap in live.aps %}
+      <div class="ap-row">
+        <span class="ap-icon">⌁</span>
+        <div><strong>{{ ap.name or 'Aura Access Point' }}</strong><small>{{ ap.model or 'Omada EAP' }}{% if ap.ip %} · {{ ap.ip }}{% endif %}</small></div>
+        <div class="ap-right"><strong>{{ ap.clients or 0 }}</strong><small>clients</small></div>
+      </div>
+      {% else %}
+      <div class="empty-state">No access point data available.</div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel services-panel">
+    <div class="panel-head slim"><div><div class="eyebrow">SERVICES</div><h2>Aura components</h2></div></div>
+    <div class="service-list">
+      <div><span><i class="service-dot on"></i>Aura Web</span><strong>Online</strong></div>
+      <div><span><i class="service-dot {{ 'on' if controller.online else 'off' }}"></i>Omada API</span><strong>{{ 'Online' if controller.online else 'Offline' }}</strong></div>
+      <div><span><i class="service-dot standby"></i>MX06 Printer</span><strong>Pending test</strong></div>
+      <div><span><i class="service-dot on"></i>Customer status</span><strong>Enabled</strong></div>
+    </div>
+    <p class="system-note">Resource values are read locally and do not add extra polling load to Omada.</p>
+  </article>
+</section>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · Vouchers{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <div>
+    <div class="eyebrow">VOUCHER LIBRARY</div>
+    <h1>Vouchers</h1>
+    <p>Search, filter and copy voucher codes from one place.</p>
+  </div>
+  <a class="btn primary" href="{{ url_for('admin_generate') }}">+ Generate voucher</a>
+</section>
+
+<section class="voucher-summary-row">
+  <div><span>Active</span><strong>{{ counts.active }}</strong></div>
+  <div><span>Ready</span><strong>{{ counts.unused }}</strong></div>
+  <div><span>Expired</span><strong>{{ counts.expired }}</strong></div>
+  <div><span>Total</span><strong>{{ counts.total }}</strong></div>
+</section>
+
+<section class="panel voucher-library">
+  <div class="voucher-toolbar">
+    <label class="search-box">
+      <span>⌕</span>
+      <input id="voucher-search" type="search" placeholder="Search voucher code or plan" autocomplete="off">
+    </label>
+    <div class="filter-tabs" role="group" aria-label="Voucher status filters">
+      <button class="active" type="button" data-filter="all">All</button>
+      <button type="button" data-filter="active">Active</button>
+      <button type="button" data-filter="unused">Ready</button>
+      <button type="button" data-filter="expired">Expired</button>
+    </div>
+  </div>
+
+  <div class="voucher-table-head">
+    <span>Voucher</span><span>Plan</span><span>Created</span><span>Status</span><span>Remaining</span><span></span>
+  </div>
+  <div id="voucher-list" class="voucher-list full-list">
+    {% for v in vouchers %}
+    <article class="voucher-table-row" data-status="{{ v.status }}" data-search="{{ v.code|lower }} {{ v.plan_name|lower }}">
+      <strong class="voucher-code">{{ v.code }}</strong>
+      <span>{{ v.plan_name }}</span>
+      <span class="muted-cell">{{ v.created_display }}</span>
+      <span><i class="badge {{ v.status }}">{{ v.status|title }}</i></span>
+      <span class="muted-cell">{{ v.remaining }}</span>
+      <button class="copy-button" type="button" data-copy="{{ v.code }}">Copy</button>
+    </article>
+    {% else %}
+    <div class="empty-state">No vouchers yet.</div>
+    {% endfor %}
+  </div>
+  <div id="voucher-empty-filter" class="empty-state hidden">No vouchers match this filter.</div>
+</section>
+
+<script>
+(() => {
+  const search = document.getElementById('voucher-search');
+  const rows = [...document.querySelectorAll('.voucher-table-row')];
+  const filters = [...document.querySelectorAll('[data-filter]')];
+  const empty = document.getElementById('voucher-empty-filter');
+  let current = 'all';
+
+  const apply = () => {
+    const q = (search.value || '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const okStatus = current === 'all' || row.dataset.status === current;
+      const okSearch = !q || (row.dataset.search || '').includes(q);
+      const show = okStatus && okSearch;
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    empty.classList.toggle('hidden', visible !== 0 || rows.length === 0);
+  };
+
+  filters.forEach((button) => button.addEventListener('click', () => {
+    filters.forEach((item) => item.classList.remove('active'));
+    button.classList.add('active');
+    current = button.dataset.filter;
+    apply();
+  }));
+  search.addEventListener('input', apply);
+
+  document.querySelectorAll('[data-copy]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const old = button.textContent;
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy || '');
+        button.textContent = 'Copied';
+        setTimeout(() => button.textContent = old, 1000);
+      } catch (_) {}
+    });
+  });
+})();
+</script>
+{% endblock %}
