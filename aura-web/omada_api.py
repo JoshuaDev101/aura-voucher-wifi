@@ -1,113 +1,63 @@
-import os
-import requests
-import urllib3
-
+import os, requests, urllib3
+from datetime import datetime
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
-class OmadaError(RuntimeError):
-    pass
-
+class OmadaError(RuntimeError): pass
 
 class OmadaClient:
     def __init__(self):
-        self.base_url = os.environ.get(
-            "AURA_OMADA_URL", "https://192.168.1.124:8043"
-        ).rstrip("/")
-        self.username = os.environ.get("AURA_OMADA_USER", "")
-        self.password = os.environ.get("AURA_OMADA_PASSWORD", "")
-        self.verify_tls = os.environ.get("AURA_OMADA_VERIFY_TLS", "false").lower() == "true"
+        self.base=os.environ.get("AURA_OMADA_URL","https://127.0.0.1:8043").rstrip("/")
+        self.user=os.environ.get("AURA_OMADA_USER","")
+        self.password=os.environ.get("AURA_OMADA_PASSWORD","")
+        self.site=os.environ.get("AURA_OMADA_SITE_ID","")
+        self.rate=os.environ.get("AURA_OMADA_RATE_LIMIT_ID","")
+        self.verify=os.environ.get("AURA_OMADA_VERIFY_TLS","false").lower()=="true"
+        self.s=requests.Session(); self.oid=None; self.token=None
 
-        self.session = requests.Session()
-        self.omadac_id = None
-        self.token = None
-
-    def get_info(self):
-        """Unauthenticated controller info endpoint.
-
-        We will verify this against the live Omada 5.15 controller before
-        depending on it for voucher generation.
-        """
-        try:
-            r = self.session.get(
-                f"{self.base_url}/api/info",
-                timeout=5,
-                verify=self.verify_tls,
-            )
-            r.raise_for_status()
-            data = r.json()
-        except Exception as exc:
-            raise OmadaError(f"Controller unavailable: {exc}") from exc
-
-        result = data.get("result") or data
-        self.omadac_id = (
-            result.get("omadacId")
-            or result.get("omadac_id")
-            or data.get("omadacId")
-        )
-
-        return {
-            "raw": data,
-            "version": result.get("controllerVer") or data.get("controllerVer"),
-            "api_version": result.get("apiVer") or data.get("apiVer"),
-            "omadac_id": self.omadac_id,
-        }
+    def info(self):
+        r=self.s.get(self.base+"/api/info",verify=self.verify,timeout=5); r.raise_for_status()
+        d=r.json(); x=d.get("result") or d
+        self.oid=x.get("omadacId") or d.get("omadacId")
+        return {"version":x.get("controllerVer"),"api_version":x.get("apiVer"),"omadac_id":self.oid}
 
     def probe(self):
         try:
-            info = self.get_info()
-            return {
-                "online": True,
-                "version": info.get("version") or "Unknown",
-                "api_version": info.get("api_version") or "Unknown",
-                "omadac_id": info.get("omadac_id") or "Unknown",
-                "error": None,
-            }
-        except Exception as exc:
-            return {
-                "online": False,
-                "version": "Unknown",
-                "api_version": "Unknown",
-                "omadac_id": "Unknown",
-                "error": str(exc),
-            }
+            x=self.info()
+            return {"online":True,"error":None,**x}
+        except Exception as e:
+            return {"online":False,"error":str(e),"version":"Unknown","api_version":"Unknown","omadac_id":"Unknown"}
 
     def login(self):
-        """Prepared for the next milestone.
+        if not self.user or not self.password: raise OmadaError("Omada credentials not configured.")
+        if not self.oid: self.info()
+        r=self.s.post(f"{self.base}/{self.oid}/api/v2/login",
+            json={"username":self.user,"password":self.password},verify=self.verify,timeout=10)
+        r.raise_for_status(); d=r.json()
+        if d.get("errorCode")!=0: raise OmadaError(d.get("msg","Login failed"))
+        self.token=(d.get("result") or {}).get("token")
+        if not self.token: raise OmadaError("No token returned.")
 
-        Do not call this for real voucher creation until the live 5.15 login
-        endpoint/response has been verified.
-        """
-        if not self.username or not self.password:
-            raise OmadaError(
-                "Set AURA_OMADA_USER and AURA_OMADA_PASSWORD locally first."
-            )
-
-        if not self.omadac_id:
-            self.get_info()
-
-        if not self.omadac_id:
-            raise OmadaError("Could not discover Omada controller ID.")
-
-        url = f"{self.base_url}/{self.omadac_id}/api/v2/login"
-        try:
-            r = self.session.post(
-                url,
-                json={"username": self.username, "password": self.password},
-                timeout=8,
-                verify=self.verify_tls,
-            )
-            r.raise_for_status()
-            data = r.json()
-        except Exception as exc:
-            raise OmadaError(f"Omada login request failed: {exc}") from exc
-
-        if data.get("errorCode") not in (0, None):
-            raise OmadaError(data.get("msg") or f"Omada error {data.get('errorCode')}")
-
-        result = data.get("result") or {}
-        self.token = result.get("token")
-        if not self.token:
-            raise OmadaError("Login response did not contain a token.")
-
-        return True
+    def create_voucher(self, plan_name, minutes):
+        if not self.site or not self.rate: raise OmadaError("Site ID / Rate Limit ID not configured.")
+        self.login()
+        headers={"Csrf-Token":self.token,"Content-Type":"application/json"}
+        name=f"AURA-{plan_name.replace(' ','-')}-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        payload={"amount":1,"applyToAllPortals":True,"codeForm":[0,1],"codeLength":6,
+          "description":f"Aura Web Admin - {plan_name}","duration":int(minutes),"durationType":1,
+          "maxUsers":1,"name":name,"rateLimitId":self.rate,"trafficLimit":None,
+          "trafficLimitEnable":False,"type":0,"upTimeLimitEnable":False,"voucherValidityEnable":False}
+        r=self.s.post(f"{self.base}/{self.oid}/api/v2/hotspot/sites/{self.site}/voucherGroups",
+          params={"token":self.token},headers=headers,json=payload,verify=self.verify,timeout=15)
+        r.raise_for_status(); d=r.json()
+        if d.get("errorCode")!=0: raise OmadaError(d.get("msg","Voucher create failed"))
+        gid=(d.get("result") or {}).get("id")
+        if not gid: raise OmadaError("No group ID returned.")
+        r=self.s.get(f"{self.base}/{self.oid}/api/v2/hotspot/sites/{self.site}/voucherGroups/{gid}",
+          params={"token":self.token,"currentPage":1,"currentPageSize":20},
+          headers={"Csrf-Token":self.token},verify=self.verify,timeout=10)
+        r.raise_for_status(); detail=r.json()
+        rows=(detail.get("result") or {}).get("data",[]) or []
+        if not rows or not rows[0].get("code"): raise OmadaError("No voucher code returned.")
+        v=rows[0]
+        return {"code":v["code"],"group_id":gid,"voucher_id":v.get("id"),"status":v.get("status"),
+                "start_time":v.get("startTime"),"end_time":v.get("endTime")}
