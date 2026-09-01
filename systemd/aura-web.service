@@ -1,0 +1,15 @@
+[Unit]
+Description=Aura Voucher WiFi Web
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/aura-voucher-wifi/aura-web
+ExecStart=/usr/bin/python3 /opt/aura-voucher-wifi/aura-web/app.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

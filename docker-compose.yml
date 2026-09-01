@@ -1,0 +1,28 @@
+services:
+  omada:
+    image: mbentley/omada-controller:5.15-arm64
+    container_name: omada
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+      - "8043:8043"
+      - "8843:8843"
+      - "27001:27001/udp"
+      - "27002:27002"
+      - "29810:29810/udp"
+      - "29811:29811"
+      - "29812:29812"
+      - "29813:29813"
+      - "29814:29814"
+      - "29815:29815"
+      - "29816:29816"
+      - "29817:29817"
+    volumes:
+      - /opt/omada/data:/opt/tplink/EAPController/data
+      - /opt/omada/logs:/opt/tplink/EAPController/logs
+      - /opt/omada/work:/opt/tplink/EAPController/work
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

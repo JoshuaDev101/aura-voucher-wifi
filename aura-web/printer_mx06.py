@@ -1,0 +1,6 @@
+"""MX06 BLE printer constants discovered from the live printer."""
+MODEL = "MX06"
+MAC = "30:08:26:16:C8:49"
+SERVICE_UUID = "0000ae30-0000-1000-8000-00805f9b34fb"
+WRITE_UUID = "0000ae01-0000-1000-8000-00805f9b34fb"
+NOTIFY_UUID = "0000ae02-0000-1000-8000-00805f9b34fb"
