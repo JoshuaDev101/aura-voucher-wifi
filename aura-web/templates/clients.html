@@ -1,0 +1,202 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · Clients{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <div>
+    <div class="eyebrow">CLIENT MONITOR</div>
+    <h1>Clients</h1>
+    <p>See who is connected, which voucher they used, remaining access time and data usage.</p>
+  </div>
+  <div class="heading-actions">
+    <span class="last-updated">Cached {{ updated_at }} · max 15s</span>
+    <a class="btn ghost" href="{{ url_for('admin_clients', refresh=1) }}">Refresh data ↻</a>
+  </div>
+</section>
+
+<section class="client-summary-grid">
+  <article class="client-summary featured-client-summary">
+    <span>WI-FI CONNECTED</span>
+    <strong>{{ live.connected_clients }}</strong>
+    <small>reported by the access point</small>
+  </article>
+  <article class="client-summary">
+    <span>AUTHORIZED</span>
+    <strong class="good-text">{{ clients.active_count }}</strong>
+    <small>valid voucher sessions now</small>
+  </article>
+  <article class="client-summary">
+    <span>OTHER CONNECTED</span>
+    <strong>{{ clients.other_connected }}</strong>
+    <small>connected but not in a current valid voucher session</small>
+  </article>
+  <article class="client-summary">
+    <span>SESSION RECORDS</span>
+    <strong>{{ clients.session_count }}</strong>
+    <small>recent hotspot records cached from Omada</small>
+  </article>
+</section>
+
+<section class="panel active-client-panel">
+  <div class="panel-head client-panel-head">
+    <div>
+      <div class="eyebrow">ACTIVE NOW</div>
+      <h2>Authorized clients</h2>
+    </div>
+    <span class="client-count-chip"><i></i>{{ clients.active_count }} active</span>
+  </div>
+
+  {% if clients.active %}
+  <div class="active-client-grid">
+    {% for c in clients.active %}
+    <article class="client-card">
+      <div class="client-card-top">
+        <div class="client-avatar">{{ c.name[:1]|upper }}</div>
+        <div class="client-identity">
+          <strong>{{ c.name }}</strong>
+          <span>{{ c.mac }}</span>
+        </div>
+        <span class="session-badge active">AUTHORIZED</span>
+      </div>
+
+      <div class="client-network-row">
+        <span>◉ {{ c.ssid }}</span>
+        <small>{{ c.ip }}</small>
+      </div>
+
+      <div class="client-voucher-box">
+        <span>VOUCHER</span>
+        <strong>{{ c.voucher_code }}</strong>
+        <button class="mini-copy" type="button" data-copy="{{ c.voucher_code }}">Copy</button>
+      </div>
+
+      <div class="client-time-block">
+        <span>REMAINING</span>
+        <strong class="client-countdown" data-remaining="{{ c.remaining_seconds }}">{{ c.remaining }}</strong>
+        <small>Started {{ c.start }}</small>
+      </div>
+
+      <div class="traffic-row">
+        <div><span>↓ DOWNLOAD</span><strong>{{ c.download }}</strong></div>
+        <div><span>↑ UPLOAD</span><strong>{{ c.upload }}</strong></div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="client-empty-state">
+    <div class="client-empty-icon">◎</div>
+    <strong>No authorized voucher clients right now</strong>
+    <span>Connected devices with a valid voucher will appear here.</span>
+  </div>
+  {% endif %}
+</section>
+
+<section class="panel client-history-panel">
+  <div class="panel-head client-history-head">
+    <div>
+      <div class="eyebrow">VOUCHER USAGE</div>
+      <h2>Recent sessions</h2>
+    </div>
+    <div class="client-table-tools">
+      <label class="search-box compact-search">
+        <span>⌕</span>
+        <input id="client-search" type="search" placeholder="Device, MAC or voucher" autocomplete="off">
+      </label>
+      <div class="filter-tabs client-filter-tabs">
+        <button class="active" type="button" data-client-filter="all">All</button>
+        <button type="button" data-client-filter="active">Active</button>
+        <button type="button" data-client-filter="expired">Expired</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="client-table-wrap">
+    <div class="client-table-head">
+      <span>Device</span><span>Voucher</span><span>Network</span><span>Download</span><span>Upload</span><span>Started</span><span>Status</span><span>Expires</span>
+    </div>
+    <div id="client-session-list" class="client-session-list">
+      {% for c in clients.recent %}
+      <article class="client-table-row" data-status="{{ c.status }}" data-search="{{ c.name|lower }} {{ c.mac|lower }} {{ c.ip|lower }} {{ c.voucher_code|lower }} {{ c.ssid|lower }}">
+        <div class="client-table-device"><strong>{{ c.name }}</strong><small>{{ c.mac }} · {{ c.ip }}</small></div>
+        <div class="client-table-voucher"><strong>{{ c.voucher_code }}</strong><small>{{ c.remaining if c.status == 'active' else 'Used' }}</small></div>
+        <span>{{ c.ssid }}</span>
+        <span>{{ c.download }}</span>
+        <span>{{ c.upload }}</span>
+        <span>{{ c.start }}</span>
+        <span><i class="badge {{ c.status }}">{{ 'Valid' if c.status == 'active' else 'Expired' }}</i></span>
+        <span>{{ c.end }}</span>
+      </article>
+      {% else %}
+      <div class="empty-state">No voucher session records returned by Omada.</div>
+      {% endfor %}
+    </div>
+    <div id="client-empty-filter" class="empty-state hidden">No sessions match this filter.</div>
+  </div>
+</section>
+
+<div class="client-data-note">
+  <span>LOW-LOAD MODE</span>
+  This page reuses the same cached Omada hotspot data already used for voucher status. It does not run a background poll or keep another process in RAM.
+</div>
+
+<script>
+(() => {
+  const clocks = [...document.querySelectorAll('[data-remaining]')];
+  const renderClock = (seconds) => {
+    seconds = Math.max(0, Number(seconds) || 0);
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const hhmmss = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    return d ? `${d}d ${hhmmss}` : hhmmss;
+  };
+  if (clocks.length) {
+    setInterval(() => clocks.forEach((clock) => {
+      const next = Math.max(0, Number(clock.dataset.remaining || 0) - 1);
+      clock.dataset.remaining = next;
+      clock.textContent = next ? renderClock(next) : 'Expired';
+      if (!next) clock.classList.add('bad-text');
+    }), 1000);
+  }
+
+  document.querySelectorAll('[data-copy]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const old = button.textContent;
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy || '');
+        button.textContent = 'Copied';
+        setTimeout(() => button.textContent = old, 1000);
+      } catch (_) {}
+    });
+  });
+
+  const search = document.getElementById('client-search');
+  const rows = [...document.querySelectorAll('.client-table-row')];
+  const filters = [...document.querySelectorAll('[data-client-filter]')];
+  const empty = document.getElementById('client-empty-filter');
+  let current = 'all';
+
+  const apply = () => {
+    const q = (search?.value || '').trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const statusOkay = current === 'all' || row.dataset.status === current;
+      const searchOkay = !q || (row.dataset.search || '').includes(q);
+      const show = statusOkay && searchOkay;
+      row.hidden = !show;
+      if (show) visible += 1;
+    });
+    if (empty) empty.classList.toggle('hidden', visible !== 0 || rows.length === 0);
+  };
+
+  filters.forEach((button) => button.addEventListener('click', () => {
+    filters.forEach((item) => item.classList.remove('active'));
+    button.classList.add('active');
+    current = button.dataset.clientFilter;
+    apply();
+  }));
+  search?.addEventListener('input', apply);
+})();
+</script>
+{% endblock %}

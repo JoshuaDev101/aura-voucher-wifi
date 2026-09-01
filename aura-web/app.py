@@ -348,6 +348,88 @@ def format_uptime(seconds):
     return f"{minutes}m"
 
 
+def format_epoch_ms(value):
+    try:
+        ms = int(value or 0)
+        if ms <= 0:
+            return "—"
+        return datetime.fromtimestamp(ms / 1000).astimezone().strftime(
+            "%b %d · %I:%M %p"
+        ).replace(" 0", " ")
+    except Exception:
+        return "—"
+
+
+def format_remaining_seconds(seconds):
+    seconds = max(0, int(seconds or 0))
+    if seconds <= 0:
+        return "Expired"
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours:02d}h {minutes:02d}m"
+    if hours:
+        return f"{hours:02d}h {minutes:02d}m"
+    return f"{minutes:02d}m {secs:02d}s"
+
+
+def prepare_client_sessions(sessions, limit=120):
+    """Create a tiny display snapshot from the hotspot data we already fetch.
+
+    No extra Omada request is made for the Clients page. This deliberately
+    reuses the same cached hotspot-client response used for voucher syncing.
+    """
+    now_ms = int(time.time() * 1000)
+    prepared = []
+
+    for row in sessions or []:
+        voucher_code = str(row.get("voucherCode") or "").strip()
+        if not voucher_code:
+            continue
+
+        start_ms = int(row.get("start") or 0)
+        end_ms = int(row.get("end") or 0)
+        valid = bool(row.get("valid")) and (end_ms <= 0 or end_ms > now_ms)
+        remaining_seconds = max(0, (end_ms - now_ms) // 1000) if end_ms > 0 else 0
+
+        device_name = str(row.get("name") or "").strip()
+        mac = str(row.get("mac") or "").strip()
+        ip = str(row.get("ip") or "").strip()
+
+        prepared.append({
+            "name": device_name or mac or ip or "Unknown device",
+            "mac": mac or "—",
+            "ip": ip or "—",
+            "ssid": str(row.get("ssid") or "Aura Voucher WiFi"),
+            "voucher_code": voucher_code,
+            "status": "active" if valid else "expired",
+            "valid": valid,
+            "download": human_bytes(row.get("download") or 0),
+            "upload": human_bytes(row.get("upload") or 0),
+            "download_bytes": int(row.get("download") or 0),
+            "upload_bytes": int(row.get("upload") or 0),
+            "elapsed": format_uptime(row.get("duration") or 0),
+            "remaining": format_remaining_seconds(remaining_seconds) if valid else "Expired",
+            "remaining_seconds": int(remaining_seconds),
+            "start": format_epoch_ms(start_ms),
+            "end": format_epoch_ms(end_ms),
+            "start_ms": start_ms,
+            "end_ms": end_ms,
+        })
+
+    # Active first, newest sessions first. Keep the cached object intentionally small.
+    prepared.sort(
+        key=lambda row: (
+            1 if row["status"] == "active" else 0,
+            row["start_ms"],
+            row["end_ms"],
+        ),
+        reverse=True,
+    )
+    return prepared[: max(1, int(limit))]
+
+
 def get_system_stats():
     stats = {
         "cpu_count": os.cpu_count() or 1,
@@ -446,6 +528,13 @@ def empty_admin_snapshot():
             "aps": [],
             "error": None,
         },
+        "clients": {
+            "active": [],
+            "recent": [],
+            "active_count": 0,
+            "session_count": 0,
+            "other_connected": "—",
+        },
         "sync_error": None,
         "updated_at": datetime.now().astimezone().strftime("%I:%M:%S %p").lstrip("0"),
     }
@@ -481,6 +570,31 @@ def get_admin_snapshot(force=False):
             live.update(omada.get_live_stats())
             sessions = omada.get_hotspot_clients()
             sync_vouchers_from_sessions(sessions)
+
+            client_rows = prepare_client_sessions(sessions)
+            active_rows = [row for row in client_rows if row["status"] == "active"]
+
+            # Deduplicate current sessions by device so one phone is one card.
+            active_by_device = {}
+            for row in active_rows:
+                key = row["mac"] if row["mac"] != "—" else row["ip"]
+                previous = active_by_device.get(key)
+                if previous is None or row["start_ms"] > previous["start_ms"]:
+                    active_by_device[key] = row
+
+            active_rows = list(active_by_device.values())
+            active_rows.sort(key=lambda row: row["start_ms"], reverse=True)
+
+            snapshot["clients"]["active"] = active_rows[:24]
+            snapshot["clients"]["recent"] = client_rows[:100]
+            snapshot["clients"]["active_count"] = len(active_rows)
+            snapshot["clients"]["session_count"] = len(client_rows)
+
+            try:
+                connected = int(live.get("connected_clients") or 0)
+                snapshot["clients"]["other_connected"] = max(0, connected - len(active_rows))
+            except (TypeError, ValueError):
+                snapshot["clients"]["other_connected"] = "—"
         except Exception as exc:
             controller["error"] = str(exc)
             live["error"] = str(exc)
@@ -492,11 +606,25 @@ def get_admin_snapshot(force=False):
         return snapshot
 
 
-def prepare_vouchers(limit=50):
+def prepare_vouchers(limit=50, client_rows=None):
     vouchers = get_vouchers(limit)
+    latest_by_code = {}
+
+    for row in client_rows or []:
+        code = str(row.get("voucher_code") or "").strip()
+        if not code:
+            continue
+        previous = latest_by_code.get(code)
+        if previous is None or int(row.get("start_ms") or 0) > int(previous.get("start_ms") or 0):
+            latest_by_code[code] = row
+
     for voucher in vouchers:
         voucher["remaining"] = remaining_text(voucher)
         voucher["created_display"] = format_created(voucher.get("created_at", ""))
+        used = latest_by_code.get(voucher.get("code"))
+        voucher["used_by"] = used.get("name") if used else None
+        voucher["used_mac"] = used.get("mac") if used else None
+        voucher["used_status"] = used.get("status") if used else None
     return vouchers
 
 
@@ -597,7 +725,7 @@ def admin_dashboard():
 @login_required
 def admin_generate():
     snapshot = get_admin_snapshot()
-    recent = prepare_vouchers(5)
+    recent = prepare_vouchers(5, snapshot["clients"]["recent"])
     return render_template(
         "generate.html",
         plans=PLANS,
@@ -614,9 +742,20 @@ def admin_vouchers():
     snapshot = get_admin_snapshot()
     return render_template(
         "vouchers.html",
-        vouchers=prepare_vouchers(100),
+        vouchers=prepare_vouchers(100, snapshot["clients"]["recent"]),
         counts=get_voucher_counts(),
         active_page="vouchers",
+        **snapshot,
+    )
+
+
+@app.get("/admin/clients")
+@login_required
+def admin_clients():
+    snapshot = get_admin_snapshot(force=request.args.get("refresh") == "1")
+    return render_template(
+        "clients.html",
+        active_page="clients",
         **snapshot,
     )
 

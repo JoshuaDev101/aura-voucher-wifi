@@ -36,8 +36,15 @@
   </div>
   <div id="voucher-list" class="voucher-list full-list">
     {% for v in vouchers %}
-    <article class="voucher-table-row" data-status="{{ v.status }}" data-search="{{ v.code|lower }} {{ v.plan_name|lower }}">
-      <strong class="voucher-code">{{ v.code }}</strong>
+    <article class="voucher-table-row" data-status="{{ v.status }}" data-search="{{ v.code|lower }} {{ v.plan_name|lower }} {{ (v.used_by or '')|lower }} {{ (v.used_mac or '')|lower }}">
+      <div class="voucher-code-stack">
+        <strong class="voucher-code">{{ v.code }}</strong>
+        {% if v.used_by %}
+        <small>Used by {{ v.used_by }}{% if v.used_status %} · {{ v.used_status|title }}{% endif %}</small>
+        {% else %}
+        <small>Not used yet</small>
+        {% endif %}
+      </div>
       <span>{{ v.plan_name }}</span>
       <span class="muted-cell">{{ v.created_display }}</span>
       <span><i class="badge {{ v.status }}">{{ v.status|title }}</i></span>

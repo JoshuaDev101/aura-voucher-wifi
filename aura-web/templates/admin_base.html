@@ -15,6 +15,7 @@
         <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">Overview</a>
         <a class="{{ 'active' if active_page == 'generate' else '' }}" href="{{ url_for('admin_generate') }}">Generate</a>
         <a class="{{ 'active' if active_page == 'vouchers' else '' }}" href="{{ url_for('admin_vouchers') }}">Vouchers</a>
+        <a class="{{ 'active' if active_page == 'clients' else '' }}" href="{{ url_for('admin_clients') }}">Clients</a>
         <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}">System</a>
       </nav>
 
@@ -46,7 +47,7 @@
 
     <footer class="footer-row">
       <span>Aura Voucher WiFi</span>
-      <span>Private owner console · v9</span>
+      <span>Private owner console · v10</span>
     </footer>
   </main>
 
@@ -54,6 +55,7 @@
     <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}"><span>⌂</span>Overview</a>
     <a class="{{ 'active' if active_page == 'generate' else '' }}" href="{{ url_for('admin_generate') }}"><span>＋</span>Generate</a>
     <a class="{{ 'active' if active_page == 'vouchers' else '' }}" href="{{ url_for('admin_vouchers') }}"><span>▤</span>Vouchers</a>
+    <a class="{{ 'active' if active_page == 'clients' else '' }}" href="{{ url_for('admin_clients') }}"><span>◎</span>Clients</a>
     <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}"><span>◉</span>System</a>
   </nav>
 </div>
