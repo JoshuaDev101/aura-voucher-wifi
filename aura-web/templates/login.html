@@ -1,25 +1,40 @@
 {% extends "base.html" %}
-{% block title %}Aura Admin Login{% endblock %}
+{% block title %}Aura · Owner Sign In{% endblock %}
 {% block body %}
-<div class="center-page">
-  <div class="login-card">
-    <div class="brand">AURA <span>Voucher WiFi</span></div>
-    <h1>Admin Login</h1>
-    <p class="muted">Voucher generation is restricted to authorized staff.</p>
+<div class="auth-page">
+  <div class="auth-shell">
+    <div class="auth-brand">
+      <div class="brand-mark">A</div>
+      <div>
+        <div class="brand-word">AURA</div>
+        <div class="brand-caption">Owner Console</div>
+      </div>
+    </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}
-        <div class="flash {{ category }}">{{ message }}</div>
-      {% endfor %}
-    {% endwith %}
+    <div class="auth-card">
+      <div class="eyebrow">PRIVATE ACCESS</div>
+      <h1>Sign in.</h1>
+      <p class="muted">Owner credentials are required to open the control panel.</p>
 
-    <form method="post">
-      <label>Username</label>
-      <input name="username" value="admin" autocomplete="username" required>
-      <label>Password</label>
-      <input type="password" name="password" autocomplete="current-password" required>
-      <button class="btn primary full">Sign In</button>
-    </form>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="flash {{ category }}">{{ message }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="post" class="auth-form" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required autofocus>
+
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" autocomplete="current-password" required>
+
+        <button class="btn primary full" type="submit">Open owner console</button>
+      </form>
+    </div>
+
+    <div class="auth-foot">Private local management portal</div>
   </div>
 </div>
 {% endblock %}

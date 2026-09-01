@@ -103,7 +103,8 @@ class OmadaClient:
         if not self.site:
             raise OmadaError("Site ID not configured.")
 
-        self.login()
+        if not self.token:
+            self.login()
 
         r = self.s.get(
             f"{self.base}/{self.oid}/api/v2/sites/{self.site}/grid/devices",
@@ -156,6 +157,74 @@ class OmadaClient:
                 for d in aps
             ],
         }
+
+
+    def get_hotspot_clients(self):
+        """Return hotspot/voucher sessions with one authenticated session."""
+        if not self.site:
+            raise OmadaError("Site ID not configured.")
+
+        if not self.token:
+            self.login()
+
+        all_rows = []
+        page = 1
+        page_size = 100
+
+        while page <= 5:
+            r = self.s.get(
+                f"{self.base}/{self.oid}/api/v2/hotspot/"
+                f"sites/{self.site}/clients",
+                params={
+                    "token": self.token,
+                    "currentPage": page,
+                    "currentPageSize": page_size,
+                },
+                headers=self._headers(),
+                verify=self.verify,
+                timeout=10,
+            )
+            d = self._json(r, "Hotspot client status")
+            result = d.get("result") or {}
+
+            if isinstance(result, dict):
+                rows = result.get("data") or result.get("rows") or []
+                total_rows = int(result.get("totalRows") or len(rows))
+            elif isinstance(result, list):
+                rows = result
+                total_rows = len(rows)
+            else:
+                rows = []
+                total_rows = 0
+
+            all_rows.extend(rows)
+
+            if page * page_size >= total_rows or not rows:
+                break
+            page += 1
+
+        return all_rows
+
+    def get_hotspot_client_by_ip(self, client_ip):
+        """Return the newest hotspot/voucher session matching a client IP."""
+        matches = [
+            row for row in self.get_hotspot_clients()
+            if str(row.get("ip") or "").strip() == str(client_ip).strip()
+        ]
+
+        if not matches:
+            return None
+
+        # Prefer a currently valid session, then the newest end/start.
+        matches.sort(
+            key=lambda row: (
+                1 if row.get("valid") else 0,
+                int(row.get("end") or 0),
+                int(row.get("start") or 0),
+            ),
+            reverse=True,
+        )
+        return matches[0]
 
     def create_voucher(self, plan_name, minutes):
         if not self.site or not self.rate:

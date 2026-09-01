@@ -1,28 +1,49 @@
 {% extends "base.html" %}
-{% block title %}Aura Admin Dashboard{% endblock %}
+{% block title %}Aura · Owner Console{% endblock %}
 {% block body %}
-<div class="app-shell">
-  <aside class="sidebar">
-    <div class="brand">AURA <span>Admin</span></div>
-    <a class="nav active" href="/admin/">Dashboard</a>
-    <a class="nav" href="#generate">Generate</a>
-    <a class="nav" href="#history">Voucher History</a>
-    <a class="nav" href="#printer">Printer</a>
-    <form method="post" action="/admin/logout">
-      <button class="nav danger" type="submit">Logout</button>
-    </form>
-  </aside>
+<div class="dashboard-page">
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand-lockup compact" href="/admin/" aria-label="Aura owner console">
+        <div class="brand-mark">A</div>
+        <div>
+          <div class="brand-word">AURA</div>
+          <div class="brand-caption">Owner Console</div>
+        </div>
+      </a>
 
-  <main class="main">
-    <div class="topbar">
-      <div>
-        <h1>Dashboard</h1>
-        <p class="muted">Aura Voucher WiFi • Web Admin v5</p>
-      </div>
-      <div class="pill {{ 'ok' if controller.online else 'bad' }}">
-        Controller {{ 'Online' if controller.online else 'Offline' }}
+      <nav class="top-nav" aria-label="Dashboard navigation">
+        <a href="#sell">Sell</a>
+        <a href="#vouchers">Vouchers</a>
+        <a href="#system">System</a>
+      </nav>
+
+      <div class="header-actions">
+        <span class="status-chip {{ 'online' if controller.online else 'offline' }}">
+          <i></i>{{ 'Controller online' if controller.online else 'Controller offline' }}
+        </span>
+        <form method="post" action="/admin/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="icon-btn" type="submit" title="Sign out" aria-label="Sign out">
+            <span>↗</span>
+          </button>
+        </form>
       </div>
     </div>
+  </header>
+
+  <main class="dashboard-shell">
+    <section class="hero-row">
+      <div>
+        <div class="eyebrow">AURA VOUCHER WIFI</div>
+        <h1>Owner Console</h1>
+        <p class="muted">Sell a voucher in one tap, then keep an eye on the network.</p>
+      </div>
+      <div class="hero-meta">
+        <span class="hero-meta-label">OMADA</span>
+        <strong>{{ controller.version }}</strong>
+      </div>
+    </section>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}
@@ -31,109 +52,144 @@
     {% endwith %}
 
     {% if sync_error %}
-      <div class="flash error">Voucher sync warning: {{ sync_error }}</div>
+      <div class="flash warning">{{ sync_error }}</div>
     {% endif %}
 
-    {% if live.error %}
-      <div class="flash error">Live AP/client stats warning: {{ live.error }}</div>
-    {% endif %}
+    <section class="overview-grid" aria-label="Live network overview">
+      <article class="overview-primary">
+        <div class="metric-kicker">CONNECTED NOW</div>
+        <div class="metric-big">{{ live.connected_clients }}</div>
+        <div class="metric-foot">
+          <span class="mini-status {{ 'good' if controller.online else 'bad' }}"><i></i>{{ 'Live' if controller.online else 'Unavailable' }}</span>
+          <span>{{ live.ap_online }}/{{ live.ap_total }} AP online</span>
+        </div>
+      </article>
 
-    <section class="metrics">
-      <div class="card metric"><span>Connected Clients</span><b>{{ live.connected_clients }}</b></div>
-      <div class="card metric"><span>AP Online</span><b>{{ live.ap_online }}/{{ live.ap_total }}</b></div>
-      <div class="card metric"><span>Active Vouchers</span><b>{{ counts.active }}</b></div>
-      <div class="card metric"><span>Unused Vouchers</span><b>{{ counts.unused }}</b></div>
-      <div class="card metric"><span>Expired</span><b>{{ counts.expired }}</b></div>
-      <div class="card metric"><span>Total Generated</span><b>{{ counts.total }}</b></div>
+      <article class="overview-card">
+        <span>Active vouchers</span>
+        <strong>{{ counts.active }}</strong>
+        <small>currently running</small>
+      </article>
+      <article class="overview-card">
+        <span>Ready vouchers</span>
+        <strong>{{ counts.unused }}</strong>
+        <small>not started yet</small>
+      </article>
+      <article class="overview-card subtle">
+        <span>Generated</span>
+        <strong>{{ counts.total }}</strong>
+        <small>{{ counts.expired }} expired</small>
+      </article>
     </section>
 
-    <section id="generate">
-      <div class="section-title">
+    <section class="panel sell-panel" id="sell">
+      <div class="panel-head">
         <div>
-          <h2>Generate REAL Omada Voucher</h2>
-          <p class="muted">Each click creates one voucher directly in Omada 5.15.</p>
+          <div class="eyebrow">SELL WIFI</div>
+          <h2>Choose a duration</h2>
         </div>
+        <p class="panel-note">One voucher · one device</p>
       </div>
 
-      <div class="plans">
+      <div class="plan-grid">
         {% for key, plan in plans.items() %}
-          <div class="card plan-card">
-            <div class="plan-name">{{ plan.name }}</div>
-            <div class="plan-meta">1 device</div>
-            <form method="post" action="/admin/generate/{{ key }}">
-              <button class="btn primary full">Generate {{ plan.name }}</button>
-            </form>
-          </div>
+          <form method="post" action="/admin/generate/{{ key }}" class="plan-action">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="plan-button" type="submit">
+              <span class="plan-number">{{ plan.name.split(' ')[0] }}</span>
+              <span class="plan-unit">{{ 'DAY' if key == '1d' else 'DAYS' }}</span>
+              <span class="plan-detail">{{ plan.short }}</span>
+              <span class="plan-cta">Generate <b>→</b></span>
+            </button>
+          </form>
         {% endfor %}
       </div>
     </section>
 
-    <section class="two-col">
-      <div class="card" id="printer">
-        <h2>Printer</h2>
-        <div class="status-row"><span>Device</span><b>MX06</b></div>
-        <div class="status-row"><span>Status</span><b class="text-bad">Next milestone</b></div>
-      </div>
-
-      <div class="card">
-        <h2>Omada Controller</h2>
-        <div class="status-row">
-          <span>Status</span>
-          <b class="{{ 'text-ok' if controller.online else 'text-bad' }}">
-            {{ 'Online' if controller.online else 'Offline' }}
-          </b>
+    <section class="content-grid">
+      <section class="panel vouchers-panel" id="vouchers">
+        <div class="panel-head voucher-head">
+          <div>
+            <div class="eyebrow">RECENT ACTIVITY</div>
+            <h2>Vouchers</h2>
+          </div>
+          <a class="btn ghost" href="/admin/">Refresh</a>
         </div>
-        <div class="status-row"><span>Version</span><b>{{ controller.version }}</b></div>
-        <div class="status-row"><span>API</span><b>{{ controller.api_version }}</b></div>
-      </div>
+
+        <div class="voucher-list">
+          {% for v in vouchers %}
+            <article class="voucher-row">
+              <button class="voucher-code-button" type="button" data-copy="{{ v.code }}" title="Copy voucher">
+                <span class="voucher-code">{{ v.code }}</span>
+                <span class="copy-hint">COPY</span>
+              </button>
+              <div class="voucher-plan">
+                <strong>{{ v.plan_name }}</strong>
+                <span>{{ v.created_display }}</span>
+              </div>
+              <div class="voucher-state">
+                <span class="badge {{ v.status }}">{{ v.status|title }}</span>
+                <span class="remaining-label">{{ v.remaining }}</span>
+              </div>
+            </article>
+          {% else %}
+            <div class="empty-state">No vouchers yet. Generate your first one above.</div>
+          {% endfor %}
+        </div>
+      </section>
+
+      <aside class="system-stack" id="system">
+        <article class="panel compact-panel">
+          <div class="system-title">
+            <div>
+              <div class="eyebrow">CONTROLLER</div>
+              <h2>Omada</h2>
+            </div>
+            <span class="dot-status {{ 'online' if controller.online else 'offline' }}"></span>
+          </div>
+          <dl class="detail-list">
+            <div><dt>Status</dt><dd>{{ 'Online' if controller.online else 'Offline' }}</dd></div>
+            <div><dt>Access point</dt><dd>{{ live.ap_online }}/{{ live.ap_total }}</dd></div>
+            <div><dt>Clients</dt><dd>{{ live.connected_clients }}</dd></div>
+            <div><dt>API</dt><dd>v{{ controller.api_version }}</dd></div>
+          </dl>
+        </article>
+
+        <article class="panel compact-panel printer-card">
+          <div class="system-title">
+            <div>
+              <div class="eyebrow">PRINTER</div>
+              <h2>MX06</h2>
+            </div>
+            <span class="dot-status standby"></span>
+          </div>
+          <p class="system-copy">Bluetooth printer integration is staged for the paper test.</p>
+          <div class="printer-tag">57mm · 384px</div>
+        </article>
+      </aside>
     </section>
 
-    <section class="card" id="history">
-      <div class="section-title">
-        <div>
-          <h2>Live Voucher Status</h2>
-          <p class="muted">
-            Refreshing this dashboard syncs the latest voucher state from Omada.
-          </p>
-        </div>
-        <a class="btn secondary" href="/admin/">Refresh Status</a>
-      </div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Plan</th>
-              <th>Status</th>
-              <th>Remaining</th>
-              <th>Created</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for v in vouchers %}
-              <tr>
-                <td class="code">{{ v.code }}</td>
-                <td>{{ v.plan_name }}</td>
-                <td>
-                  <span class="badge {{ v.status }}">
-                    {{ v.status|title }}
-                  </span>
-                </td>
-                <td>{{ v.remaining }}</td>
-                <td>{{ v.created_at }}</td>
-              </tr>
-            {% else %}
-              <tr>
-                <td colspan="5" class="empty">
-                  No Aura-generated vouchers yet.
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <footer class="footer-row">
+      <span>Aura Voucher WiFi</span>
+      <span>Private owner console · v8</span>
+    </footer>
   </main>
 </div>
+
+<script>
+(() => {
+  document.querySelectorAll('[data-copy]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const code = button.dataset.copy || '';
+      try {
+        await navigator.clipboard.writeText(code);
+        const hint = button.querySelector('.copy-hint');
+        const old = hint.textContent;
+        hint.textContent = 'COPIED';
+        setTimeout(() => hint.textContent = old, 1200);
+      } catch (_) {}
+    });
+  });
+})();
+</script>
 {% endblock %}
