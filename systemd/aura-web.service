@@ -7,7 +7,11 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=/opt/aura-voucher-wifi/aura-web
-ExecStart=/usr/bin/python3 /opt/aura-voucher-wifi/aura-web/app.py
+
+EnvironmentFile=/etc/aura/aura.env
+
+ExecStart=/opt/aura-voucher-wifi/.venv/bin/python /opt/aura-voucher-wifi/aura-web/app.py
+
 Restart=always
 RestartSec=3
 
