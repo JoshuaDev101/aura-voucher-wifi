@@ -5,6 +5,8 @@ import os
 import secrets
 import string
 
+from omada_api import OmadaClient
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("AURA_SECRET_KEY", "dev-only-change-me")
 
@@ -14,12 +16,12 @@ ADMIN_PASSWORD = os.environ.get("AURA_ADMIN_PASSWORD")
 if not ADMIN_PASSWORD:
     raise RuntimeError(
         "AURA_ADMIN_PASSWORD is not set. "
-        "Set it before running, e.g. PowerShell: $env:AURA_ADMIN_PASSWORD='your-password'"
+        "Set it before running."
     )
 
-# Mock state for UI development only.
-mock = {
-    "controller_online": True,
+# UI-development state. Omada controller status is now real;
+# client/AP/voucher data stays mock until we verify the 5.15 authenticated API.
+mock_base = {
     "ap_online": 1,
     "ap_total": 1,
     "connected_clients": 4,
@@ -36,6 +38,7 @@ PLANS = {
     "7d": {"name": "7 Days", "minutes": 10080},
 }
 
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -44,17 +47,39 @@ def login_required(view):
         return view(*args, **kwargs)
     return wrapped
 
+
 def make_code(length=6):
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+def get_dashboard_state():
+    probe = OmadaClient().probe()
+    state = dict(mock_base)
+    state.update({
+        "controller_online": probe["online"],
+        "controller_version": probe["version"],
+        "controller_api_version": probe["api_version"],
+        "controller_id": probe["omadac_id"],
+        "controller_error": probe["error"],
+    })
+    return state
+
 
 @app.get("/")
 def customer_home():
     return render_template("customer.html")
 
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "app": "Aura Voucher WiFi"}
+    probe = OmadaClient().probe()
+    return {
+        "status": "ok",
+        "app": "Aura Voucher WiFi",
+        "omada": probe,
+    }
+
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
@@ -67,11 +92,13 @@ def admin_login():
         flash("Invalid username or password.", "error")
     return render_template("login.html")
 
+
 @app.post("/admin/logout")
 @login_required
 def admin_logout():
     session.clear()
     return redirect(url_for("admin_login"))
+
 
 @app.get("/admin/")
 @login_required
@@ -84,11 +111,12 @@ def admin_dashboard():
     }
     return render_template(
         "dashboard.html",
-        mock=mock,
+        mock=get_dashboard_state(),
         vouchers=list(reversed(vouchers[-12:])),
         counts=counts,
         plans=PLANS,
     )
+
 
 @app.post("/admin/generate/<plan_key>")
 @login_required
@@ -98,6 +126,7 @@ def generate_voucher(plan_key):
         flash("Unknown plan.", "error")
         return redirect(url_for("admin_dashboard"))
 
+    # Still mock. Real Omada voucher creation comes after live 5.15 API capture.
     now = datetime.now()
     voucher = {
         "code": make_code(),
@@ -107,8 +136,13 @@ def generate_voucher(plan_key):
         "expires_at": None,
     }
     vouchers.append(voucher)
-    flash(f"Mock voucher {voucher['code']} generated for {plan['name']}.", "success")
+    flash(
+        f"Mock voucher {voucher['code']} generated for {plan['name']}. "
+        "Real Omada generation is the next milestone.",
+        "success",
+    )
     return redirect(url_for("admin_dashboard"))
+
 
 @app.post("/admin/mock/activate/<code>")
 @login_required
@@ -118,10 +152,13 @@ def mock_activate(code):
             plan = next((p for p in PLANS.values() if p["name"] == v["plan"]), None)
             minutes = plan["minutes"] if plan else 60
             v["status"] = "active"
-            v["expires_at"] = (datetime.now() + timedelta(minutes=minutes)).strftime("%Y-%m-%d %H:%M:%S")
+            v["expires_at"] = (
+                datetime.now() + timedelta(minutes=minutes)
+            ).strftime("%Y-%m-%d %H:%M:%S")
             flash(f"{code} marked active (demo only).", "success")
             break
     return redirect(url_for("admin_dashboard"))
+
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8790, debug=True)

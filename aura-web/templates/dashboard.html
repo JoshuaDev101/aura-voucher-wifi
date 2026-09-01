@@ -17,7 +17,7 @@
     <div class="topbar">
       <div>
         <h1>Dashboard</h1>
-        <p class="muted">Aura Voucher WiFi • Web Admin v1</p>
+        <p class="muted">Aura Voucher WiFi • Web Admin v2</p>
       </div>
       <div class="pill {{ 'ok' if mock.controller_online else 'bad' }}">
         Controller {{ 'Online' if mock.controller_online else 'Offline' }}
@@ -30,6 +30,10 @@
       {% endfor %}
     {% endwith %}
 
+    {% if mock.controller_error %}
+      <div class="flash error">Omada probe: {{ mock.controller_error }}</div>
+    {% endif %}
+
     <section class="metrics">
       <div class="card metric"><span>Connected Clients</span><b>{{ mock.connected_clients }}</b></div>
       <div class="card metric"><span>AP Online</span><b>{{ mock.ap_online }}/{{ mock.ap_total }}</b></div>
@@ -41,7 +45,10 @@
 
     <section id="generate">
       <div class="section-title">
-        <div><h2>Generate Voucher</h2><p class="muted">Demo mode: generates mock codes only.</p></div>
+        <div>
+          <h2>Generate Voucher</h2>
+          <p class="muted">Still mock until the authenticated Omada 5.15 voucher API is verified.</p>
+        </div>
       </div>
       <div class="plans">
         {% for key, plan in plans.items() %}
@@ -66,10 +73,11 @@
       </div>
 
       <div class="card">
-        <h2>System</h2>
-        <div class="status-row"><span>Omada</span><b>5.15 mock</b></div>
-        <div class="status-row"><span>API</span><b>Not connected yet</b></div>
-        <div class="status-row"><span>Mode</span><b>Local development</b></div>
+        <h2>Omada Controller</h2>
+        <div class="status-row"><span>Status</span><b class="{{ 'text-ok' if mock.controller_online else 'text-bad' }}">{{ 'Online' if mock.controller_online else 'Offline' }}</b></div>
+        <div class="status-row"><span>Version</span><b>{{ mock.controller_version }}</b></div>
+        <div class="status-row"><span>API Version</span><b>{{ mock.controller_api_version }}</b></div>
+        <div class="status-row"><span>Controller ID</span><b style="font-size:11px">{{ mock.controller_id }}</b></div>
       </div>
     </section>
 
