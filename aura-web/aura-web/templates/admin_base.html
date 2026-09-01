@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="admin-app">
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand-lockup compact" href="{{ url_for('admin_dashboard') }}" aria-label="Aura owner console">
+        <div class="brand-mark">A</div>
+        <div>
+          <div class="brand-word">AURA</div>
+          <div class="brand-caption">Owner Console</div>
+        </div>
+      </a>
+
+      <nav class="top-nav" aria-label="Owner navigation">
+        <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">Overview</a>
+        <a class="{{ 'active' if active_page == 'generate' else '' }}" href="{{ url_for('admin_generate') }}">Generate</a>
+        <a class="{{ 'active' if active_page == 'vouchers' else '' }}" href="{{ url_for('admin_vouchers') }}">Vouchers</a>
+        <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}">System</a>
+      </nav>
+
+      <div class="header-actions">
+        <span class="status-chip {{ 'online' if controller.online else 'offline' }}">
+          <i></i>{{ 'Online' if controller.online else 'Offline' }}
+        </span>
+        <a class="header-generate" href="{{ url_for('admin_generate') }}">+ Generate</a>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="icon-btn" type="submit" title="Sign out" aria-label="Sign out">↗</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-shell">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    {% if sync_error %}
+      <div class="flash warning">{{ sync_error }}</div>
+    {% endif %}
+
+    {% block admin_content %}{% endblock %}
+
+    <footer class="footer-row">
+      <span>Aura Voucher WiFi</span>
+      <span>Private owner console · v9</span>
+    </footer>
+  </main>
+
+  <nav class="mobile-nav" aria-label="Mobile owner navigation">
+    <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}"><span>⌂</span>Overview</a>
+    <a class="{{ 'active' if active_page == 'generate' else '' }}" href="{{ url_for('admin_generate') }}"><span>＋</span>Generate</a>
+    <a class="{{ 'active' if active_page == 'vouchers' else '' }}" href="{{ url_for('admin_vouchers') }}"><span>▤</span>Vouchers</a>
+    <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}"><span>◉</span>System</a>
+  </nav>
+</div>
+{% endblock %}

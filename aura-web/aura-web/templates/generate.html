@@ -1,0 +1,66 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · Generate Voucher{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <div>
+    <div class="eyebrow">VOUCHER CREATION</div>
+    <h1>Generate voucher</h1>
+    <p>Choose a duration. One tap creates one Omada voucher for one device.</p>
+  </div>
+  <div class="heading-badge"><span>{{ counts.unused }}</span> ready</div>
+</section>
+
+<section class="generate-layout">
+  <article class="panel generate-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">CHOOSE ACCESS</div><h2>Duration</h2></div>
+      <span class="panel-note">One voucher · one device</span>
+    </div>
+
+    <div class="plan-grid v9-plans">
+      {% for key, plan in plans.items() %}
+      <form method="post" action="{{ url_for('generate', plan_key=key) }}" class="plan-action">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="plan-button" type="submit">
+          <span class="plan-kicker">AURA ACCESS</span>
+          <span class="plan-main"><b>{{ plan.name.split(' ')[0] }}</b><em>{{ 'DAY' if key == '1d' else 'DAYS' }}</em></span>
+          <span class="plan-detail">{{ plan.short }} · single device</span>
+          <span class="plan-cta">Generate now <b>→</b></span>
+        </button>
+      </form>
+      {% endfor %}
+    </div>
+  </article>
+
+  <aside class="panel recent-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">RECENT</div><h2>Latest vouchers</h2></div>
+      <a class="text-link" href="{{ url_for('admin_vouchers') }}">View all →</a>
+    </div>
+    <div class="mini-voucher-list">
+      {% for v in recent %}
+      <button class="mini-voucher" type="button" data-copy="{{ v.code }}">
+        <span><strong>{{ v.code }}</strong><small>{{ v.plan_name }} · {{ v.created_display }}</small></span>
+        <span class="badge {{ v.status }}">{{ v.status }}</span>
+      </button>
+      {% else %}
+      <div class="empty-state">No vouchers yet.</div>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<script>
+(() => {
+  document.querySelectorAll('[data-copy]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy || '');
+        button.classList.add('copied');
+        setTimeout(() => button.classList.remove('copied'), 900);
+      } catch (_) {}
+    });
+  });
+})();
+</script>
+{% endblock %}
