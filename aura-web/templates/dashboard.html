@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Aura Admin Dashboard{% endblock %}
+{% block body %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">AURA <span>Admin</span></div>
+    <a class="nav active" href="/admin/">Dashboard</a>
+    <a class="nav" href="#generate">Generate</a>
+    <a class="nav" href="#history">Voucher History</a>
+    <a class="nav" href="#printer">Printer</a>
+    <form method="post" action="/admin/logout" class="logout-form">
+      <button class="nav danger" type="submit">Logout</button>
+    </form>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1>Dashboard</h1>
+        <p class="muted">Aura Voucher WiFi • Web Admin v1</p>
+      </div>
+      <div class="pill {{ 'ok' if mock.controller_online else 'bad' }}">
+        Controller {{ 'Online' if mock.controller_online else 'Offline' }}
+      </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <section class="metrics">
+      <div class="card metric"><span>Connected Clients</span><b>{{ mock.connected_clients }}</b></div>
+      <div class="card metric"><span>AP Online</span><b>{{ mock.ap_online }}/{{ mock.ap_total }}</b></div>
+      <div class="card metric"><span>Active Vouchers</span><b>{{ counts.active }}</b></div>
+      <div class="card metric"><span>Unused Vouchers</span><b>{{ counts.unused }}</b></div>
+      <div class="card metric"><span>Expired</span><b>{{ counts.expired }}</b></div>
+      <div class="card metric"><span>Total Generated</span><b>{{ counts.total }}</b></div>
+    </section>
+
+    <section id="generate">
+      <div class="section-title">
+        <div><h2>Generate Voucher</h2><p class="muted">Demo mode: generates mock codes only.</p></div>
+      </div>
+      <div class="plans">
+        {% for key, plan in plans.items() %}
+        <div class="card plan-card">
+          <div class="plan-name">{{ plan.name }}</div>
+          <div class="plan-meta">1 device</div>
+          <form method="post" action="/admin/generate/{{ key }}">
+            <button class="btn primary full">Generate {{ plan.name }}</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="two-col">
+      <div class="card" id="printer">
+        <h2>Printer</h2>
+        <div class="status-row"><span>Device</span><b>{{ mock.printer_name }}</b></div>
+        <div class="status-row"><span>Status</span><b class="{{ 'text-ok' if mock.printer_connected else 'text-bad' }}">{{ 'Connected' if mock.printer_connected else 'Offline' }}</b></div>
+        <div class="status-row"><span>Battery</span><b>{{ mock.printer_battery }}</b></div>
+        <button class="btn secondary" disabled>Test Print (later)</button>
+      </div>
+
+      <div class="card">
+        <h2>System</h2>
+        <div class="status-row"><span>Omada</span><b>5.15 mock</b></div>
+        <div class="status-row"><span>API</span><b>Not connected yet</b></div>
+        <div class="status-row"><span>Mode</span><b>Local development</b></div>
+      </div>
+    </section>
+
+    <section class="card" id="history">
+      <div class="section-title">
+        <div><h2>Recent Vouchers</h2><p class="muted">Temporary in-memory demo history.</p></div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Code</th><th>Plan</th><th>Status</th><th>Created</th><th>Demo</th></tr>
+          </thead>
+          <tbody>
+          {% for v in vouchers %}
+            <tr>
+              <td class="code">{{ v.code }}</td>
+              <td>{{ v.plan }}</td>
+              <td><span class="badge {{ v.status }}">{{ v.status|title }}</span></td>
+              <td>{{ v.created_at }}</td>
+              <td>
+                {% if v.status == 'unused' %}
+                <form method="post" action="/admin/mock/activate/{{ v.code }}">
+                  <button class="tiny-btn">Activate</button>
+                </form>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5" class="empty">No vouchers generated yet.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+{% endblock %}

@@ -1,0 +1,84 @@
+:root{
+  --bg:#07101c;
+  --panel:#0f1b2d;
+  --panel2:#13233a;
+  --line:#223a5d;
+  --text:#f2f7ff;
+  --muted:#8da6c7;
+  --blue:#4c8dff;
+  --cyan:#29d4cf;
+  --green:#39db8f;
+  --red:#ff6f7f;
+  --yellow:#f6c65c;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,Segoe UI,Arial,sans-serif}
+a{text-decoration:none;color:inherit}
+button,input{font:inherit}
+.center-page{min-height:100vh;display:grid;place-items:center;padding:24px}
+.login-card,.customer-card{width:min(430px,100%);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 20px 60px #0006}
+.brand{font-size:22px;font-weight:900;letter-spacing:.5px;margin-bottom:22px}
+.brand span{color:var(--cyan)}
+h1,h2{margin:0 0 8px}
+h1{font-size:30px}
+h2{font-size:18px}
+.muted{color:var(--muted);margin-top:4px}
+label{display:block;margin:14px 0 7px;color:#cbd9ec;font-weight:700;font-size:13px}
+input{width:100%;border:1px solid var(--line);background:#091524;color:white;border-radius:12px;padding:12px 13px;outline:none}
+input:focus{border-color:var(--blue)}
+.btn{border:0;border-radius:12px;padding:11px 15px;font-weight:850;cursor:pointer;display:inline-block}
+.btn.primary{background:var(--blue);color:white}
+.btn.secondary{background:var(--panel2);border:1px solid var(--line);color:white}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.full{width:100%}
+.flash{padding:12px 14px;border-radius:12px;margin:14px 0;border:1px solid}
+.flash.success{background:#0e3528;border-color:#216b4d;color:#a9f3cf}
+.flash.error{background:#3a1820;border-color:#69303c;color:#ffc1c8}
+.info-box{padding:14px;background:#0b1728;border:1px solid var(--line);border-radius:14px;color:#b9cbe2;margin:18px 0}
+.app-shell{min-height:100vh;display:grid;grid-template-columns:230px 1fr}
+.sidebar{background:#0b1728;border-right:1px solid var(--line);padding:22px 16px;position:sticky;top:0;height:100vh}
+.sidebar .brand{padding:0 8px}
+.nav{display:block;width:100%;text-align:left;padding:11px 12px;border-radius:11px;margin:5px 0;color:#bfd0e7;background:transparent;border:0;cursor:pointer}
+.nav:hover,.nav.active{background:#152846;color:white}
+.nav.danger{color:#ffabb5}
+.logout-form{margin-top:auto}
+.main{padding:28px;max-width:1400px;width:100%}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.pill{padding:8px 11px;border-radius:999px;font-weight:800;font-size:12px}
+.pill.ok{background:#12392c;color:#a7f1cc}
+.pill.bad{background:#3a1820;color:#ffc1c8}
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:26px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px}
+.metric span{color:var(--muted);font-size:12px}
+.metric b{display:block;font-size:28px;margin-top:7px}
+.section-title{display:flex;justify-content:space-between;align-items:center;margin:10px 0 12px}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:26px}
+.plan-card{text-align:center}
+.plan-name{font-size:24px;font-weight:900;margin:8px 0 4px}
+.plan-meta{color:var(--muted);margin-bottom:16px}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:26px}
+.status-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1d3150}
+.status-row:last-of-type{margin-bottom:14px}
+.text-ok{color:var(--green)}
+.text-bad{color:var(--red)}
+.table-wrap{overflow:auto}
+table{width:100%;border-collapse:collapse;min-width:720px}
+th,td{text-align:left;padding:11px 10px;border-bottom:1px solid #1d3150}
+th{font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.5px}
+.code{font-weight:900;letter-spacing:.6px}
+.badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:900}
+.badge.unused{background:#493917;color:#ffd98a}
+.badge.active{background:#12392c;color:#a7f1cc}
+.badge.expired{background:#3a1820;color:#ffc1c8}
+.tiny-btn{border:1px solid var(--line);background:#152846;color:white;border-radius:8px;padding:6px 9px;cursor:pointer}
+.empty{text-align:center;color:var(--muted);padding:24px}
+@media(max-width:1100px){.metrics{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:760px){
+  .app-shell{grid-template-columns:1fr}
+  .sidebar{height:auto;position:static;display:flex;gap:6px;overflow:auto;align-items:center}
+  .sidebar .brand{margin:0 12px 0 0;white-space:nowrap}
+  .nav{width:auto;white-space:nowrap}
+  .main{padding:18px}
+  .metrics{grid-template-columns:repeat(2,1fr)}
+  .plans,.two-col{grid-template-columns:1fr}
+}

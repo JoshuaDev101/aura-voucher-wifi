@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Aura Admin Login{% endblock %}
+{% block body %}
+<div class="center-page">
+  <div class="login-card">
+    <div class="brand">AURA <span>Voucher WiFi</span></div>
+    <h1>Admin Login</h1>
+    <p class="muted">Voucher generation is restricted to authorized staff.</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="post">
+      <label>Username</label>
+      <input name="username" value="admin" autocomplete="username" required>
+      <label>Password</label>
+      <input type="password" name="password" autocomplete="current-password" required>
+      <button class="btn primary full">Sign In</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
