@@ -1,20 +1,38 @@
-Aura Web Admin v3 - REAL Omada vouchers
+Aura Web Admin v4 - Live Voucher Status
+=======================================
 
-Merge these files into the existing repo:
-- aura-web/app.py
-- aura-web/omada_api.py
-- aura-web/templates/dashboard.html
+What changes:
+- REAL voucher generation remains enabled.
+- Existing Aura SQLite DB is migrated automatically.
+- Adds start_time, end_time, last_sync columns.
+- Dashboard refresh syncs up to 25 non-expired vouchers from Omada.
+- Status is derived from Omada startTime/endTime:
+    startTime == 0 -> Unused
+    started and endTime still in future -> Active
+    endTime reached -> Expired
+- Shows remaining time for active vouchers.
+- Does NOT yet add live AP/client counts.
+- MX06 printer remains the next milestone.
 
-On Orange Pi, add these LOCAL values to /etc/aura/aura.env:
-AURA_OMADA_USER="your Omada username/email"
-AURA_OMADA_PASSWORD="your Omada password"
-AURA_OMADA_SITE_ID="your site id"
-AURA_OMADA_RATE_LIMIT_ID="your rate-limit id"
-AURA_DATA_DIR="/var/lib/aura"
+Merge into the existing repo:
+  aura-web/app.py
+  aura-web/omada_api.py
+  aura-web/templates/dashboard.html
 
-Then:
-mkdir -p /var/lib/aura
-chmod 750 /var/lib/aura
-systemctl restart aura-web
+Then on Orange Pi:
+  cd /root/aura-voucher-wifi
+  git pull
 
-Do not commit /etc/aura/aura.env to GitHub.
+  cp aura-web/app.py /opt/aura-voucher-wifi/aura-web/
+  cp aura-web/omada_api.py /opt/aura-voucher-wifi/aura-web/
+  cp aura-web/templates/dashboard.html /opt/aura-voucher-wifi/aura-web/templates/
+
+  systemctl restart aura-web
+  sleep 2
+  systemctl is-active aura-web
+  curl -s http://127.0.0.1:8790/health
+
+Open:
+  http://192.168.1.124/admin/
+
+Use "Refresh Status" after a voucher is first used.
