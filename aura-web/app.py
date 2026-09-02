@@ -919,6 +919,7 @@ def generate(plan_key):
                         code=info["code"],
                         plan=plan["name"],
                         message=f"Voucher created, but printing failed: {print_exc}",
+                        retry_url=url_for("print_voucher", voucher_id=voucher_id),
                     ), 500
                 flash(f"Voucher {info['code']} was created, but printing failed: {print_exc}", "warning")
         else:
@@ -958,7 +959,12 @@ def print_voucher(voucher_id):
         flash(f"Voucher {voucher['code']} sent to MX06.", "success")
     except Exception as exc:
         if print_ui_request():
-            return jsonify(ok=False, code=voucher.get("code"), message=f"Print failed: {exc}"), 500
+            return jsonify(
+                ok=False,
+                code=voucher.get("code"),
+                message=f"Print failed: {exc}",
+                retry_url=url_for("print_voucher", voucher_id=voucher_id),
+            ), 500
         flash(f"Print failed: {exc}", "error")
 
     destination = request.form.get("return_to", "generate")

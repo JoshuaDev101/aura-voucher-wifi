@@ -226,3 +226,12 @@ body.print-modal-open{overflow:hidden}
 @keyframes aura-print-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.print-progress-spinner{animation-duration:1.8s}}
 @media(max-width:480px){.print-progress{padding:14px}.print-progress-card{padding:25px 20px;border-radius:19px}.print-progress-card h2{font-size:24px}}
+
+
+/* v12.2 print feedback actions */
+.print-progress-actions{width:100%;display:flex;gap:10px;margin-top:22px}
+.print-progress-actions .btn{min-height:46px;justify-content:center;margin-top:0}
+.print-progress-retry{border:1px solid rgba(255,129,143,.24);background:rgba(255,129,143,.07);color:#ffb0ba}
+.print-progress[data-state="error"] .print-progress-card{border-color:rgba(255,129,143,.22)}
+.print-progress[data-state="success"] .print-progress-card{border-color:rgba(118,230,171,.18)}
+@media (max-width:480px){.print-progress-actions{flex-direction:column}.print-progress-actions .btn{width:100%}}

@@ -47,7 +47,7 @@
 
     <footer class="footer-row">
       <span>Aura Voucher WiFi</span>
-      <span>Private owner console · v12.1</span>
+      <span>Private owner console · v12.2</span>
     </footer>
   </main>
 
@@ -69,9 +69,12 @@
       </div>
       <div class="eyebrow" id="print-progress-kicker">MX06 PRINTER</div>
       <h2 id="print-progress-title">Printing voucher</h2>
-      <p id="print-progress-message">Connecting to the printer and sending your receipt. Keep the MX06 powered on.</p>
+      <p id="print-progress-message" aria-live="polite">Connecting to the printer and sending your receipt. Keep the MX06 powered on.</p>
       <div id="print-progress-code" class="print-progress-code" hidden></div>
-      <button id="print-progress-close" class="btn primary full print-progress-close" type="button" hidden>Close</button>
+      <div class="print-progress-actions">
+        <button id="print-progress-retry" class="btn secondary full print-progress-retry" type="button" hidden>↻ Retry Print</button>
+        <button id="print-progress-close" class="btn primary full print-progress-close" type="button" hidden>Close</button>
+      </div>
     </section>
   </div>
 </div>
@@ -86,7 +89,51 @@
   const kicker = document.getElementById('print-progress-kicker');
   const code = document.getElementById('print-progress-code');
   const close = document.getElementById('print-progress-close');
+  const retry = document.getElementById('print-progress-retry');
+
   let reloadOnClose = false;
+  let retryRequest = null;
+  let audioContext = null;
+
+  const primeFeedback = () => {
+    try {
+      if (!audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) audioContext = new AudioCtx();
+      }
+      if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+    } catch (_) {}
+  };
+
+  const tone = (frequency, start, duration, gainValue = 0.055) => {
+    if (!audioContext) return;
+    try {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(frequency, audioContext.currentTime + start);
+      gain.gain.setValueAtTime(0.0001, audioContext.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(gainValue, audioContext.currentTime + start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + start + duration);
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start(audioContext.currentTime + start);
+      osc.stop(audioContext.currentTime + start + duration + 0.02);
+    } catch (_) {}
+  };
+
+  const feedback = (kind) => {
+    primeFeedback();
+    if (kind === 'success') {
+      tone(659, 0.00, 0.13);
+      tone(880, 0.14, 0.20);
+      if (navigator.vibrate) navigator.vibrate([55, 35, 85]);
+    } else if (kind === 'error') {
+      tone(220, 0.00, 0.16, 0.06);
+      tone(165, 0.17, 0.24, 0.06);
+      if (navigator.vibrate) navigator.vibrate([170, 70, 170]);
+    }
+  };
 
   const setState = (state, payload = {}) => {
     modal.dataset.state = state;
@@ -94,10 +141,13 @@
     code.textContent = payload.code || '';
 
     if (state === 'printing') {
-      kicker.textContent = 'MX06 PRINTER';
-      title.textContent = 'Printing voucher';
-      message.textContent = 'Connecting to the printer and sending your receipt. Keep the MX06 powered on.';
+      kicker.textContent = payload.retrying ? 'RETRYING PRINT' : 'MX06 PRINTER';
+      title.textContent = payload.retrying ? 'Retrying voucher' : 'Printing voucher';
+      message.textContent = payload.retrying
+        ? 'Reconnecting to the MX06 and sending the same voucher again.'
+        : 'Connecting to the printer and sending your receipt. Keep the MX06 powered on.';
       close.hidden = true;
+      retry.hidden = true;
       return;
     }
 
@@ -106,25 +156,95 @@
       kicker.textContent = 'PRINT COMPLETE';
       title.textContent = 'Done printing';
       message.textContent = payload.message || 'Your voucher receipt is ready.';
+      retry.hidden = true;
     } else {
-      kicker.textContent = payload.created ? 'VOUCHER CREATED' : 'PRINT ERROR';
-      title.textContent = payload.created ? 'Printing failed' : 'Could not print';
+      kicker.textContent = payload.created ? 'VOUCHER SAVED · PRINT ERROR' : 'PRINT ERROR';
+      title.textContent = 'Could not print';
       message.textContent = payload.message || 'The MX06 could not finish this print.';
+      retry.hidden = !retryRequest;
     }
   };
 
-  const open = () => {
+  const showModal = () => {
     reloadOnClose = false;
+    retryRequest = null;
     setState('printing');
     modal.hidden = false;
     modal.setAttribute('aria-hidden', 'false');
     document.body.classList.add('print-modal-open');
   };
 
-  const finish = (state, payload) => {
-    reloadOnClose = Boolean(payload && payload.created);
-    setState(state, payload || {});
-    close.focus();
+  const finish = (state, payload = {}) => {
+    reloadOnClose = Boolean(payload.created) || reloadOnClose;
+    setState(state, payload);
+    feedback(state);
+    (state === 'error' && retryRequest ? retry : close).focus();
+  };
+
+  const csrfOnlyData = (sourceData) => {
+    const data = new FormData();
+    const token = sourceData.get('csrf_token');
+    if (token) data.set('csrf_token', token);
+    const returnTo = sourceData.get('return_to');
+    if (returnTo) data.set('return_to', returnTo);
+    return data;
+  };
+
+  const runPrintRequest = async (url, data, options = {}) => {
+    setState('printing', {retrying: Boolean(options.retrying), code: options.code || ''});
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        body: data,
+        headers: {
+          'X-Aura-Print-UI': '1',
+          'Accept': 'application/json'
+        },
+        credentials: 'same-origin'
+      });
+
+      let payload = {};
+      try { payload = await response.json(); } catch (_) {}
+
+      if (response.ok && payload.ok) {
+        retryRequest = null;
+        finish('success', payload);
+        return;
+      }
+
+      if (payload.retry_url) {
+        retryRequest = {
+          url: payload.retry_url,
+          dataFactory: () => csrfOnlyData(data),
+          code: payload.code || options.code || ''
+        };
+      } else if (options.safeRetry) {
+        retryRequest = {
+          url,
+          dataFactory: () => csrfOnlyData(data),
+          code: payload.code || options.code || ''
+        };
+      } else {
+        retryRequest = null;
+      }
+
+      finish('error', {
+        ...payload,
+        message: payload.message || `Printing failed (HTTP ${response.status}).`
+      });
+    } catch (_) {
+      retryRequest = options.safeRetry ? {
+        url,
+        dataFactory: () => csrfOnlyData(data),
+        code: options.code || ''
+      } : null;
+      finish('error', {
+        code: options.code || '',
+        message: options.safeRetry
+          ? 'Aura lost the connection while printing. Check the MX06, then retry the same voucher.'
+          : 'Aura lost the connection during Generate + Print. Check Recent vouchers first to avoid creating a duplicate voucher.'
+      });
+    }
   };
 
   close.addEventListener('click', () => {
@@ -134,41 +254,31 @@
     if (reloadOnClose) window.location.reload();
   });
 
+  retry.addEventListener('click', () => {
+    if (!retryRequest) return;
+    primeFeedback();
+    const request = retryRequest;
+    runPrintRequest(request.url, request.dataFactory(), {
+      retrying: true,
+      safeRetry: true,
+      code: request.code
+    });
+  });
+
   document.querySelectorAll('form[data-print-ui]').forEach((form) => {
-    form.addEventListener('submit', async (event) => {
+    form.addEventListener('submit', (event) => {
       const submitter = event.submitter;
       if (submitter && submitter.dataset.printUi === '0') return;
       if (submitter && submitter.disabled) return;
 
       event.preventDefault();
-      open();
+      primeFeedback();
+      showModal();
 
       const data = new FormData(form);
       if (submitter && submitter.name) data.set(submitter.name, submitter.value);
-
-      try {
-        const response = await fetch(form.action, {
-          method: 'POST',
-          body: data,
-          headers: {
-            'X-Aura-Print-UI': '1',
-            'Accept': 'application/json'
-          },
-          credentials: 'same-origin'
-        });
-        let payload = {};
-        try { payload = await response.json(); } catch (_) {}
-        if (response.ok && payload.ok) {
-          finish('success', payload);
-        } else {
-          finish('error', {
-            ...payload,
-            message: payload.message || `Printing failed (HTTP ${response.status}).`
-          });
-        }
-      } catch (_) {
-        finish('error', {message: 'Could not reach Aura while printing. Check the network and try again.'});
-      }
+      const isDirectPrint = /\/admin\/print\/\d+\/?$/.test(new URL(form.action, window.location.href).pathname);
+      runPrintRequest(form.action, data, {safeRetry: isDirectPrint});
     });
   });
 })();
