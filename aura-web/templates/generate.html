@@ -26,7 +26,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="plan-button plan-card-static">
           <span class="plan-kicker">AURA ACCESS</span>
-          <span class="plan-main"><b>{{ plan.name.split(' ')[0] }}</b><em>{{ 'DAY' if key == '1d' else 'DAYS' }}</em></span>
+          <span class="plan-main"><b>{{ plan.amount }}</b><em>{{ plan.unit }}</em></span>
           <span class="plan-detail">{{ plan.short }} · single device</span>
           <span class="plan-price">{{ '₱' ~ plan.price if plan.price else 'Price not set' }}</span>
         </div>
@@ -38,8 +38,8 @@
       {% endfor %}
     </div>
 
-    {% if not plans['1d'].price or not plans['3d'].price or not plans['7d'].price %}
-    <div class="price-note"><b>Pricing:</b> set <code>AURA_PRICE_1D</code>, <code>AURA_PRICE_3D</code>, and <code>AURA_PRICE_7D</code> in <code>/etc/aura/aura.env</code> so the receipt prints your real price.</div>
+    {% if not plans['3h'].price or not plans['7h'].price or not plans['1d'].price or not plans['3d'].price or not plans['7d'].price %}
+    <div class="price-note"><b>Pricing:</b> set <code>AURA_PRICE_3H</code>, <code>AURA_PRICE_7H</code>, <code>AURA_PRICE_1D</code>, <code>AURA_PRICE_3D</code>, and <code>AURA_PRICE_7D</code> in <code>/etc/aura/aura.env</code> so every receipt prints the correct price.</div>
     {% endif %}
   </article>
 

@@ -48,9 +48,11 @@ def configured_price(env_name):
 
 
 PLANS = {
-    "1d": {"name": "1 Day", "minutes": 1440, "short": "24 hours", "price": configured_price("AURA_PRICE_1D")},
-    "3d": {"name": "3 Days", "minutes": 4320, "short": "72 hours", "price": configured_price("AURA_PRICE_3D")},
-    "7d": {"name": "7 Days", "minutes": 10080, "short": "168 hours", "price": configured_price("AURA_PRICE_7D")},
+    "3h": {"name": "3 Hours", "minutes": 180, "short": "180 minutes", "amount": "3", "unit": "HOURS", "price": configured_price("AURA_PRICE_3H")},
+    "7h": {"name": "7 Hours", "minutes": 420, "short": "420 minutes", "amount": "7", "unit": "HOURS", "price": configured_price("AURA_PRICE_7H")},
+    "1d": {"name": "1 Day", "minutes": 1440, "short": "24 hours", "amount": "1", "unit": "DAY", "price": configured_price("AURA_PRICE_1D")},
+    "3d": {"name": "3 Days", "minutes": 4320, "short": "72 hours", "amount": "3", "unit": "DAYS", "price": configured_price("AURA_PRICE_3D")},
+    "7d": {"name": "7 Days", "minutes": 10080, "short": "168 hours", "amount": "7", "unit": "DAYS", "price": configured_price("AURA_PRICE_7D")},
 }
 
 PRINTER_MAC = os.environ.get("AURA_PRINTER_MAC", "30:08:26:16:C8:49").strip()

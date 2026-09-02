@@ -70,21 +70,21 @@ def build_receipt(code: str, validity: str, price: str, status_url: str):
         ) from exc
 
     width = 384
-    height = 372
+    height = 420
     image = Image.new("L", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    title = load_font(22, bold=True)
-    label = load_font(12, bold=True)
-    code_font = load_font(40, bold=True)
-    value_font = load_font(19, bold=True)
+    title = load_font(28, bold=True)
+    label = load_font(16, bold=True)
+    code_font = load_font(64, bold=True)
+    value_font = load_font(25, bold=True)
 
     # Header — tight but still readable on 57 mm paper.
-    centered(draw, 14, "AURA WIFI VOUCHER", title, width)
-    draw.line((30, 48, width - 30, 48), fill=0, width=2)
+    centered(draw, 10, "AURA WIFI VOUCHER", title, width)
+    draw.line((24, 52, width - 24, 52), fill=0, width=2)
 
     # Voucher code is the visual focus.
-    centered(draw, 62, code, code_font, width)
+    centered(draw, 65, code, code_font, width)
 
     # Validity + price share one compact row.
     left_center = 110
@@ -94,15 +94,15 @@ def build_receipt(code: str, validity: str, price: str, status_url: str):
 
     lw = text_width(draw, "VALIDITY", label)
     pw = text_width(draw, "PRICE", label)
-    draw.text((left_center - lw // 2, 122), "VALIDITY", fill=0, font=label)
-    draw.text((right_center - pw // 2, 122), "PRICE", fill=0, font=label)
+    draw.text((left_center - lw // 2, 150), "VALIDITY", fill=0, font=label)
+    draw.text((right_center - pw // 2, 150), "PRICE", fill=0, font=label)
 
     vw = text_width(draw, validity_text, value_font)
     rw = text_width(draw, price_text, value_font)
-    draw.text((left_center - vw // 2, 143), validity_text, fill=0, font=value_font)
-    draw.text((right_center - rw // 2, 143), price_text, fill=0, font=value_font)
+    draw.text((left_center - vw // 2, 177), validity_text, fill=0, font=value_font)
+    draw.text((right_center - rw // 2, 177), price_text, fill=0, font=value_font)
 
-    draw.line((30, 180, width - 30, 180), fill=0, width=1)
+    draw.line((24, 216, width - 24, 216), fill=0, width=1)
 
     # Small QR keeps the receipt useful without wasting paper.
     qr = qrcode.QRCode(
@@ -114,9 +114,9 @@ def build_receipt(code: str, validity: str, price: str, status_url: str):
     qr.add_data(status_url)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("L")
-    qr_img.thumbnail((146, 146))
+    qr_img = qr_img.resize((168, 168), resample=Image.Resampling.NEAREST)
     qx = (width - qr_img.width) // 2
-    image.paste(qr_img, (qx, 194))
+    image.paste(qr_img, (qx, 230))
 
     # Small bottom feed area only; no marketing/footer copy.
     return image.convert("1", dither=Image.Dither.NONE)

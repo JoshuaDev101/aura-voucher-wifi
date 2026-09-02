@@ -1,74 +1,28 @@
-Aura Web Admin v11 - MX06 Print Integration (low-load)
-=====================================================
+Aura Web Admin v12 - 3H + 7H Access Plans
 
-What changed
-------------
-- Physically verified MX06 BLE printing path is now wired into Aura.
-- Generate page has Generate and Generate + Print.
-- Recent vouchers and Vouchers page have Print/Reprint actions.
-- Receipt is 384px monochrome and contains only:
-  AURA WIFI VOUCHER / code / validity / price / QR.
-- QR points to AURA_STATUS_URL (default http://192.168.1.124/status).
-- Printing is one-shot and event-driven: render -> BLE connect -> print -> disconnect -> exit.
-- Pillow/qrcode are loaded in a short-lived child process only, so idle Aura RAM stays almost unchanged.
-- A low-memory safety guard refuses a print if MemAvailable is below 64 MB (configurable).
-- No BLE scanner, battery poller, or permanent printer worker was added.
+Adds two low-load voucher durations without adding any background service or polling:
+- 3 Hours = 180 minutes
+- 7 Hours = 420 minutes
+- Existing 1 Day / 3 Days / 7 Days remain unchanged
 
-Before deploying
-----------------
-The tested Cat-Printer driver must exist at:
-  /opt/aura-printer-test/printer.py
+Pricing variables in /etc/aura/aura.env:
+AURA_PRICE_3H=""
+AURA_PRICE_7H=""
+AURA_PRICE_1D="20"
+AURA_PRICE_3D="50"
+AURA_PRICE_7D="80"
 
-This was already physically verified on MX06 using:
-  /opt/aura-voucher-wifi/.venv/bin/python printer.py aura-test.pbm -s "4,30:08:26:16:C8:49" -0 -q 2
+The Generate page now shows five responsive plan cards and stays mobile-friendly.
+The larger compact MX06 receipt tuning is also preserved in this package.
 
-Install only the receipt-rendering dependencies:
-  /opt/aura-voucher-wifi/.venv/bin/pip install -r /opt/aura-voucher-wifi/aura-web/requirements-printer.txt
-
-Recommended /etc/aura/aura.env values
--------------------------------------
-Set YOUR real prices before production printing:
-  AURA_PRICE_1D=""
-  AURA_PRICE_3D=""
-  AURA_PRICE_7D=""
-
-Printer defaults (change only if needed):
-  AURA_PRINTER_MAC="30:08:26:16:C8:49"
-  AURA_PRINTER_DRIVER="/opt/aura-printer-test/printer.py"
-  AURA_STATUS_URL="http://192.168.1.124/status"
-  AURA_PRINTER_MIN_AVAILABLE_MB="64"
-
-Deploy files
-------------
-Copy:
+Deploy changed files:
   aura-web/app.py
   aura-web/printer_mx06.py
-  aura-web/requirements-printer.txt
-  aura-web/templates/admin_base.html
   aura-web/templates/generate.html
-  aura-web/templates/vouchers.html
-  aura-web/templates/system.html
+  aura-web/templates/dashboard.html
+  aura-web/templates/admin_base.html
   aura-web/static/style.css
 
-Then:
-  /opt/aura-voucher-wifi/.venv/bin/python -m py_compile \
-    /opt/aura-voucher-wifi/aura-web/app.py \
-    /opt/aura-voucher-wifi/aura-web/printer_mx06.py
+After deploy:
+  python -m py_compile app.py printer_mx06.py
   systemctl restart aura-web
-  systemctl is-active aura-web
-
-First production test
----------------------
-1. Set real plan prices in /etc/aura/aura.env.
-2. Restart aura-web.
-3. Open /admin/generate.
-4. Generate a temporary 1-day voucher using Generate + Print.
-5. Verify code, validity, price, QR and paper feed.
-6. Re-run free -h and process RSS after the print to confirm memory returned.
-
-
-V11.2 COMPACT RECEIPT
-- Reduced MX06 receipt height from 590px to 372px.
-- Keeps only AURA WIFI VOUCHER, code, validity, price, and QR.
-- Smaller QR and tighter spacing to reduce 57mm paper use.
-- Printing remains one-shot / low-load.
