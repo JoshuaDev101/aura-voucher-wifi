@@ -58,7 +58,7 @@
         <div class="eyebrow">DEVICE HEALTH</div>
         <h2>Orange Pi</h2>
       </div>
-      <a class="text-link" href="{{ url_for('admin_system') }}">System details →</a>
+      {% if is_owner %}<a class="text-link" href="{{ url_for('admin_system') }}">System details →</a>{% else %}<span class="role-badge manager">MANAGER VIEW</span>{% endif %}
     </div>
     <div class="health-metrics">
       <div class="health-item">
@@ -86,7 +86,7 @@
       <a href="{{ url_for('admin_generate') }}"><span class="quick-icon">＋</span><span><strong>Generate voucher</strong><small>Create 3h, 7h, 1d, 3d or 7d access</small></span><b>→</b></a>
       <a href="{{ url_for('admin_clients') }}"><span class="quick-icon">◎</span><span><strong>Connected clients</strong><small>See devices, voucher codes and usage</small></span><b>→</b></a>
       <a href="{{ url_for('admin_vouchers') }}"><span class="quick-icon">▤</span><span><strong>Voucher history</strong><small>Search, filter and see who used each code</small></span><b>→</b></a>
-      <a href="{{ url_for('admin_system') }}"><span class="quick-icon">◉</span><span><strong>System health</strong><small>Controller, AP and Orange Pi</small></span><b>→</b></a>
+      {% if is_owner %}<a href="{{ url_for('admin_system') }}"><span class="quick-icon">◉</span><span><strong>System health</strong><small>Controller, AP and Orange Pi</small></span><b>→</b></a>{% endif %}
     </div>
   </article>
 </section>

@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from threading import Lock
 from werkzeug.middleware.proxy_fix import ProxyFix
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import secrets
 import shutil
@@ -22,7 +23,7 @@ app.secret_key = os.environ.get("AURA_SECRET_KEY", "dev-only-change-me")
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Strict",
-    PERMANENT_SESSION_LIFETIME=60 * 60 * 12,
+    PERMANENT_SESSION_LIFETIME=60 * 60 * 24 * 30,
 )
 
 ADMIN_USER = os.environ.get("AURA_ADMIN_USER", "admin")
@@ -30,6 +31,12 @@ ADMIN_PASSWORD = os.environ.get("AURA_ADMIN_PASSWORD")
 
 if not ADMIN_PASSWORD:
     raise RuntimeError("AURA_ADMIN_PASSWORD is not set.")
+
+MANAGER_MAX_ATTEMPTS = int(os.environ.get("AURA_MANAGER_MAX_ATTEMPTS", "5"))
+MANAGER_LOCK_SECONDS = int(os.environ.get("AURA_MANAGER_LOCK_SECONDS", "300"))
+MANAGER_SESSION_SECONDS = int(os.environ.get("AURA_MANAGER_SESSION_SECONDS", str(60 * 60 * 12)))
+MANAGER_REMEMBER_SECONDS = int(os.environ.get("AURA_MANAGER_REMEMBER_SECONDS", str(60 * 60 * 24 * 30)))
+OWNER_SESSION_SECONDS = int(os.environ.get("AURA_OWNER_SESSION_SECONDS", str(60 * 60 * 12)))
 
 DATA_DIR = Path(os.environ.get("AURA_DATA_DIR", "/var/lib/aura"))
 DB = DATA_DIR / "aura.db"
@@ -99,6 +106,128 @@ def init_db():
         for column, sql in migrations.items():
             if column not in existing:
                 con.execute(sql)
+
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS admin_access(
+                id INTEGER PRIMARY KEY CHECK(id = 1),
+                manager_pin_hash TEXT,
+                manager_session_version INTEGER NOT NULL DEFAULT 1,
+                failed_attempts INTEGER NOT NULL DEFAULT 0,
+                locked_until INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT
+            )
+            """
+        )
+        con.execute(
+            "INSERT OR IGNORE INTO admin_access(id, manager_session_version, failed_attempts, locked_until) VALUES (1, 1, 0, 0)"
+        )
+
+
+def get_admin_access():
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT manager_pin_hash, manager_session_version, failed_attempts, locked_until, updated_at FROM admin_access WHERE id = 1"
+        ).fetchone()
+    if not row:
+        return {
+            "manager_pin_hash": None,
+            "manager_session_version": 1,
+            "failed_attempts": 0,
+            "locked_until": 0,
+            "updated_at": None,
+        }
+    return dict(row)
+
+
+def manager_pin_set():
+    return bool(get_admin_access().get("manager_pin_hash"))
+
+
+def manager_pin_value(pin):
+    # Pepper the low-entropy PIN with Aura's server secret before hashing.
+    return f"{pin}:{app.secret_key}"
+
+
+def hash_manager_pin(pin):
+    # PBKDF2 is deliberately low-memory for this small Orange Pi. Online attempts
+    # are separately protected by the lockout below.
+    return generate_password_hash(
+        manager_pin_value(pin),
+        method="pbkdf2:sha256:260000",
+        salt_length=16,
+    )
+
+
+def verify_manager_pin(pin, stored_hash):
+    if not stored_hash:
+        return False
+    try:
+        return check_password_hash(stored_hash, manager_pin_value(pin))
+    except Exception:
+        return False
+
+
+def set_manager_pin(pin):
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            """
+            UPDATE admin_access
+               SET manager_pin_hash = ?,
+                   manager_session_version = manager_session_version + 1,
+                   failed_attempts = 0,
+                   locked_until = 0,
+                   updated_at = ?
+             WHERE id = 1
+            """,
+            (hash_manager_pin(pin), now),
+        )
+
+
+def disable_manager_pin():
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            """
+            UPDATE admin_access
+               SET manager_pin_hash = NULL,
+                   manager_session_version = manager_session_version + 1,
+                   failed_attempts = 0,
+                   locked_until = 0,
+                   updated_at = ?
+             WHERE id = 1
+            """,
+            (now,),
+        )
+
+
+def record_manager_pin_success():
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            "UPDATE admin_access SET failed_attempts = 0, locked_until = 0 WHERE id = 1"
+        )
+
+
+def record_manager_pin_failure(access):
+    attempts = int(access.get("failed_attempts") or 0) + 1
+    now = int(time.time())
+    if attempts >= MANAGER_MAX_ATTEMPTS:
+        locked_until = now + MANAGER_LOCK_SECONDS
+        with sqlite3.connect(DB) as con:
+            con.execute(
+                "UPDATE admin_access SET failed_attempts = 0, locked_until = ? WHERE id = 1",
+                (locked_until,),
+            )
+        return 0, locked_until
+
+    with sqlite3.connect(DB) as con:
+        con.execute(
+            "UPDATE admin_access SET failed_attempts = ?, locked_until = 0 WHERE id = 1",
+            (attempts,),
+        )
+    return MANAGER_MAX_ATTEMPTS - attempts, 0
 
 
 def get_vouchers(limit=50):
@@ -747,13 +876,59 @@ def require_csrf():
         abort(400)
 
 
+def _admin_session_valid():
+    if not session.get("admin_logged_in"):
+        return False
+
+    expires_at = int(session.get("admin_expires_at") or 0)
+    if expires_at and int(time.time()) >= expires_at:
+        return False
+
+    role = session.get("admin_role")
+    if role == "owner":
+        return True
+
+    if role == "manager":
+        access = get_admin_access()
+        if not access.get("manager_pin_hash"):
+            return False
+        return int(session.get("manager_session_version") or 0) == int(
+            access.get("manager_session_version") or 0
+        )
+
+    return False
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if not session.get("admin_logged_in"):
+        if not _admin_session_valid():
+            session.clear()
             return redirect(url_for("admin_login"))
         return view(*args, **kwargs)
     return wrapped
+
+
+def owner_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not _admin_session_valid():
+            session.clear()
+            return redirect(url_for("admin_owner_login"))
+        if session.get("admin_role") != "owner":
+            flash("Owner access is required for that page.", "warning")
+            return redirect(url_for("admin_dashboard"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.context_processor
+def inject_admin_identity():
+    return {
+        "admin_role": session.get("admin_role", ""),
+        "is_owner": session.get("admin_role") == "owner",
+        "is_manager": session.get("admin_role") == "manager",
+    }
 
 
 @app.after_request
@@ -784,6 +959,78 @@ def health():
 
 @app.route("/admin/login", methods=["GET", "POST"])
 def admin_login():
+    access = get_admin_access()
+    pin_configured = bool(access.get("manager_pin_hash"))
+    now = int(time.time())
+    locked_for = max(0, int(access.get("locked_until") or 0) - now)
+
+    if request.method == "POST":
+        require_csrf()
+        ajax = request.headers.get("X-Aura-Login-UI") == "1"
+        pin = request.form.get("pin", "").strip()
+        remember = request.form.get("remember") == "1"
+
+        def login_response(ok, message, status=200, redirect_to=None, remaining=None, locked_seconds=0):
+            if ajax:
+                payload = {
+                    "ok": ok,
+                    "message": message,
+                    "redirect": redirect_to or "",
+                    "remaining": remaining,
+                    "locked_seconds": int(locked_seconds or 0),
+                }
+                return jsonify(payload), status
+            if ok:
+                return redirect(redirect_to or url_for("admin_dashboard"))
+            flash(message, "error")
+            return None
+
+        if not pin_configured:
+            response = login_response(False, "Manager PIN is not set yet. Ask the owner to set it in Settings.", 403)
+            if response is not None:
+                return response
+        elif locked_for > 0:
+            mins = max(1, (locked_for + 59) // 60)
+            response = login_response(False, f"Too many attempts. Try again in about {mins} minute(s).", 429, locked_seconds=locked_for)
+            if response is not None:
+                return response
+        elif len(pin) != 6 or not pin.isdigit():
+            response = login_response(False, "Enter your 6-digit manager PIN.", 400)
+            if response is not None:
+                return response
+        elif verify_manager_pin(pin, access.get("manager_pin_hash")):
+            record_manager_pin_success()
+            session.clear()
+            session["admin_logged_in"] = True
+            session["admin_role"] = "manager"
+            session["manager_session_version"] = int(access.get("manager_session_version") or 1)
+            session["csrf_token"] = secrets.token_urlsafe(32)
+            duration = MANAGER_REMEMBER_SECONDS if remember else MANAGER_SESSION_SECONDS
+            session["admin_expires_at"] = int(time.time()) + duration
+            session.permanent = remember
+            response = login_response(True, "PIN accepted. Opening Aura Admin…", 200, url_for("admin_dashboard"))
+            if response is not None:
+                return response
+        else:
+            remaining, locked_until = record_manager_pin_failure(access)
+            if locked_until:
+                message = "Too many incorrect PIN attempts. Manager login is locked for 5 minutes."
+                response = login_response(False, message, 429, remaining=0, locked_seconds=MANAGER_LOCK_SECONDS)
+            else:
+                word = "attempt" if remaining == 1 else "attempts"
+                response = login_response(False, f"Incorrect PIN. {remaining} {word} remaining.", 401, remaining=remaining)
+            if response is not None:
+                return response
+
+    return render_template(
+        "login.html",
+        manager_pin_set=pin_configured,
+        locked_for=locked_for,
+    )
+
+
+@app.route("/admin/owner-login", methods=["GET", "POST"])
+def admin_owner_login():
     if request.method == "POST":
         require_csrf()
         username = request.form.get("username", "")
@@ -792,13 +1039,15 @@ def admin_login():
         if secrets.compare_digest(username, ADMIN_USER) and secrets.compare_digest(password, ADMIN_PASSWORD):
             session.clear()
             session["admin_logged_in"] = True
+            session["admin_role"] = "owner"
             session["csrf_token"] = secrets.token_urlsafe(32)
-            session.permanent = True
+            session["admin_expires_at"] = int(time.time()) + OWNER_SESSION_SECONDS
+            session.permanent = False
             return redirect(url_for("admin_dashboard"))
 
-        flash("Invalid username or password.", "error")
+        flash("Invalid owner username or password.", "error")
 
-    return render_template("login.html")
+    return render_template("owner_login.html")
 
 
 @app.post("/admin/logout")
@@ -863,7 +1112,7 @@ def admin_clients():
 
 
 @app.get("/admin/system")
-@login_required
+@owner_required
 def admin_system():
     snapshot = get_admin_snapshot(force=request.args.get("refresh") == "1")
     return render_template(
@@ -873,6 +1122,47 @@ def admin_system():
         active_page="system",
         **snapshot,
     )
+
+
+@app.get("/admin/settings")
+@owner_required
+def admin_settings():
+    snapshot = get_admin_snapshot()
+    access = get_admin_access()
+    return render_template(
+        "settings.html",
+        manager_access=access,
+        owner_username=ADMIN_USER,
+        active_page="settings",
+        **snapshot,
+    )
+
+
+@app.post("/admin/settings/manager-pin")
+@owner_required
+def admin_set_manager_pin():
+    require_csrf()
+    pin = request.form.get("pin", "").strip()
+    confirm = request.form.get("confirm_pin", "").strip()
+
+    if len(pin) != 6 or not pin.isdigit():
+        flash("Manager PIN must be exactly 6 digits.", "error")
+    elif pin != confirm:
+        flash("PIN confirmation does not match.", "error")
+    else:
+        set_manager_pin(pin)
+        flash("Manager PIN saved. Existing manager sessions were signed out.", "success")
+
+    return redirect(url_for("admin_settings"))
+
+
+@app.post("/admin/settings/manager-pin/disable")
+@owner_required
+def admin_disable_manager_pin():
+    require_csrf()
+    disable_manager_pin()
+    flash("Manager PIN access disabled. Existing manager sessions were signed out.", "success")
+    return redirect(url_for("admin_settings"))
 
 
 def print_ui_request():

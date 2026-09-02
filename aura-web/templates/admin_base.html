@@ -3,27 +3,30 @@
 <div class="admin-app">
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand-lockup compact" href="{{ url_for('admin_dashboard') }}" aria-label="Aura owner console">
+      <a class="brand-lockup compact" href="{{ url_for('admin_dashboard') }}" aria-label="Aura admin console">
         <div class="brand-mark">A</div>
         <div>
           <div class="brand-word">AURA</div>
-          <div class="brand-caption">Owner Console</div>
+          <div class="brand-caption">{{ 'Owner Console' if is_owner else 'Manager Console' }}</div>
         </div>
       </a>
 
-      <nav class="top-nav" aria-label="Owner navigation">
+      <nav class="top-nav" aria-label="Admin navigation">
         <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}">Overview</a>
         <a class="{{ 'active' if active_page == 'generate' else '' }}" href="{{ url_for('admin_generate') }}">Generate</a>
         <a class="{{ 'active' if active_page == 'vouchers' else '' }}" href="{{ url_for('admin_vouchers') }}">Vouchers</a>
         <a class="{{ 'active' if active_page == 'clients' else '' }}" href="{{ url_for('admin_clients') }}">Clients</a>
-        <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}">System</a>
+        {% if is_owner %}<a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}">System</a>
+        <a class="{{ 'active' if active_page == 'settings' else '' }}" href="{{ url_for('admin_settings') }}">Settings</a>{% endif %}
       </nav>
 
       <div class="header-actions">
+        <span class="role-chip {{ admin_role }}">{{ 'OWNER' if is_owner else 'MANAGER' }}</span>
         <span class="status-chip {{ 'online' if controller.online else 'offline' }}">
           <i></i>{{ 'Online' if controller.online else 'Offline' }}
         </span>
         <a class="header-generate" href="{{ url_for('admin_generate') }}">+ Generate</a>
+        {% if is_owner %}<a class="icon-btn header-settings" href="{{ url_for('admin_settings') }}" title="Settings" aria-label="Settings">⚙</a>{% endif %}
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="icon-btn" type="submit" title="Sign out" aria-label="Sign out">↗</button>
@@ -47,16 +50,16 @@
 
     <footer class="footer-row">
       <span>Aura Voucher WiFi</span>
-      <span>Private owner console · v12.2</span>
+      <span>{{ 'Owner' if is_owner else 'Manager' }} console · v13</span>
     </footer>
   </main>
 
-  <nav class="mobile-nav" aria-label="Mobile owner navigation">
+  <nav class="mobile-nav {{ 'owner-nav' if is_owner else 'manager-nav' }}" aria-label="Mobile admin navigation">
     <a class="{{ 'active' if active_page == 'dashboard' else '' }}" href="{{ url_for('admin_dashboard') }}"><span>⌂</span>Overview</a>
     <a class="{{ 'active' if active_page == 'generate' else '' }}" href="{{ url_for('admin_generate') }}"><span>＋</span>Generate</a>
     <a class="{{ 'active' if active_page == 'vouchers' else '' }}" href="{{ url_for('admin_vouchers') }}"><span>▤</span>Vouchers</a>
     <a class="{{ 'active' if active_page == 'clients' else '' }}" href="{{ url_for('admin_clients') }}"><span>◎</span>Clients</a>
-    <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}"><span>◉</span>System</a>
+    {% if is_owner %}<a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}"><span>◉</span>System</a>{% endif %}
   </nav>
 
   <div id="print-progress" class="print-progress" hidden aria-hidden="true">

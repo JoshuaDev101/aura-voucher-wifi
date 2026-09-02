@@ -1,29 +1,202 @@
 {% extends "base.html" %}
-{% block title %}Aura · Owner Sign In{% endblock %}
+{% block title %}Aura · Manager PIN{% endblock %}
 {% block body %}
-<div class="auth-page">
-  <div class="auth-shell">
+<div class="auth-page pin-auth-page">
+  <div class="auth-shell pin-auth-shell">
     <div class="auth-brand">
       <div class="brand-mark">A</div>
-      <div><div class="brand-word">AURA</div><div class="brand-caption">Owner Console</div></div>
+      <div><div class="brand-word">AURA</div><div class="brand-caption">Manager Access</div></div>
     </div>
-    <div class="auth-card">
-      <div class="eyebrow">PRIVATE ACCESS</div>
-      <h1>Welcome back.</h1>
-      <p class="muted">Sign in to manage vouchers, network status and Aura system health.</p>
+
+    <div class="auth-card pin-auth-card">
+      <div class="eyebrow">QUICK ACCESS</div>
+      <h1>Enter PIN</h1>
+      <p class="muted">Use the 6-digit manager PIN to open vouchers, printing and client tools.</p>
+
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
       {% endwith %}
-      <form method="post" class="auth-form" autocomplete="on">
+
+      {% if not manager_pin_set %}
+      <div class="pin-setup-needed">
+        <strong>Manager PIN not set yet</strong>
+        <span>Sign in as Owner once, then open Settings → Manager Access.</span>
+      </div>
+      {% endif %}
+
+      <form id="manager-pin-form" method="post" class="pin-login-form" autocomplete="off" data-enabled="{{ '1' if manager_pin_set else '0' }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label for="username">Username</label>
-        <input id="username" name="username" autocomplete="username" required autofocus>
-        <label for="password">Password</label>
-        <input id="password" type="password" name="password" autocomplete="current-password" required>
-        <button class="btn primary full" type="submit">Open owner console <span>→</span></button>
+
+        <label class="pin-input-label" for="manager-pin">6-digit PIN</label>
+        <input
+          id="manager-pin"
+          class="pin-input"
+          type="password"
+          name="pin"
+          inputmode="numeric"
+          pattern="[0-9]{6}"
+          minlength="6"
+          maxlength="6"
+          autocomplete="off"
+          aria-describedby="pin-feedback"
+          {% if not manager_pin_set %}disabled{% endif %}
+        >
+
+        <div id="pin-feedback" class="pin-feedback" aria-live="polite">
+          {% if locked_for %}Manager login is temporarily locked. Try again shortly.{% else %}Tap the keypad or type your PIN.{% endif %}
+        </div>
+
+        <div class="pin-keypad" aria-label="PIN keypad">
+          {% for digit in ['1','2','3','4','5','6','7','8','9'] %}
+          <button type="button" class="pin-key" data-digit="{{ digit }}" {% if not manager_pin_set %}disabled{% endif %}>{{ digit }}</button>
+          {% endfor %}
+          <button type="button" class="pin-key pin-key-action" id="pin-backspace" aria-label="Delete last digit" {% if not manager_pin_set %}disabled{% endif %}>⌫</button>
+          <button type="button" class="pin-key" data-digit="0" {% if not manager_pin_set %}disabled{% endif %}>0</button>
+          <button type="submit" class="pin-key pin-key-submit" aria-label="Unlock Aura Admin" {% if not manager_pin_set %}disabled{% endif %}>✓</button>
+        </div>
+
+        <label class="remember-device">
+          <input type="checkbox" name="remember" value="1" {% if not manager_pin_set %}disabled{% endif %}>
+          <span><strong>Remember this phone</strong><small>Stay signed in for up to 30 days on this browser.</small></span>
+        </label>
       </form>
+
+      <div class="owner-login-row">
+        <span>Need full settings?</span>
+        <a class="text-link" href="{{ url_for('admin_owner_login') }}">Owner sign in →</a>
+      </div>
     </div>
-    <div class="auth-foot">Local owner access only</div>
+    <div class="auth-foot">Local Aura access · PIN is never displayed after setup</div>
   </div>
 </div>
+
+<script>
+(() => {
+  const form = document.getElementById('manager-pin-form');
+  const input = document.getElementById('manager-pin');
+  const feedback = document.getElementById('pin-feedback');
+  if (!form || !input || form.dataset.enabled !== '1') return;
+
+  const keys = form.querySelectorAll('[data-digit]');
+  const backspace = document.getElementById('pin-backspace');
+  const submit = form.querySelector('.pin-key-submit');
+  let busy = false;
+  let audioContext = null;
+
+  const primeAudio = () => {
+    try {
+      if (!audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) audioContext = new AudioCtx();
+      }
+      if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+    } catch (_) {}
+  };
+
+  const tone = (frequency, start, duration, gainValue = 0.05) => {
+    if (!audioContext) return;
+    try {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(frequency, audioContext.currentTime + start);
+      gain.gain.setValueAtTime(0.0001, audioContext.currentTime + start);
+      gain.gain.exponentialRampToValueAtTime(gainValue, audioContext.currentTime + start + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + start + duration);
+      osc.connect(gain);
+      gain.connect(audioContext.destination);
+      osc.start(audioContext.currentTime + start);
+      osc.stop(audioContext.currentTime + start + duration + 0.02);
+    } catch (_) {}
+  };
+
+  const notify = (kind) => {
+    primeAudio();
+    if (kind === 'success') {
+      tone(659, 0, .12); tone(880, .13, .20);
+      if (navigator.vibrate) navigator.vibrate([55, 35, 85]);
+    } else {
+      tone(220, 0, .15, .06); tone(165, .16, .23, .06);
+      if (navigator.vibrate) navigator.vibrate([150, 60, 150]);
+    }
+  };
+
+  const clean = () => {
+    input.value = input.value.replace(/\D/g, '').slice(0, 6);
+    form.dataset.filled = String(input.value.length);
+  };
+
+  keys.forEach((key) => key.addEventListener('click', () => {
+    primeAudio();
+    if (busy || input.value.length >= 6) return;
+    input.value += key.dataset.digit;
+    clean();
+  }));
+
+  backspace.addEventListener('click', () => {
+    primeAudio();
+    if (busy) return;
+    input.value = input.value.slice(0, -1);
+    clean();
+  });
+
+  input.addEventListener('input', clean);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    primeAudio();
+    clean();
+    if (busy) return;
+    if (input.value.length !== 6) {
+      feedback.textContent = 'Enter all 6 digits first.';
+      feedback.dataset.state = 'error';
+      notify('error');
+      return;
+    }
+
+    busy = true;
+    submit.disabled = true;
+    form.dataset.state = 'checking';
+    feedback.dataset.state = '';
+    feedback.textContent = 'Checking PIN…';
+
+    try {
+      const response = await fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {'X-Aura-Login-UI': '1', 'Accept': 'application/json'},
+        credentials: 'same-origin'
+      });
+      let payload = {};
+      try { payload = await response.json(); } catch (_) {}
+
+      if (response.ok && payload.ok) {
+        form.dataset.state = 'success';
+        feedback.dataset.state = 'success';
+        feedback.textContent = payload.message || 'PIN accepted. Opening Aura Admin…';
+        notify('success');
+        window.setTimeout(() => { window.location.href = payload.redirect || '/admin/'; }, 520);
+        return;
+      }
+
+      form.dataset.state = 'error';
+      feedback.dataset.state = 'error';
+      feedback.textContent = payload.message || 'Incorrect PIN. Please try again.';
+      input.value = '';
+      clean();
+      notify('error');
+    } catch (_) {
+      form.dataset.state = 'error';
+      feedback.dataset.state = 'error';
+      feedback.textContent = 'Could not reach Aura. Check WiFi and try again.';
+      notify('error');
+    } finally {
+      busy = false;
+      submit.disabled = false;
+    }
+  });
+
+  clean();
+})();
+</script>
 {% endblock %}

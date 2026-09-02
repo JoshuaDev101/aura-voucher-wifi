@@ -1,0 +1,77 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · Settings{% endblock %}
+{% block admin_content %}
+<section class="page-heading">
+  <div>
+    <div class="eyebrow">OWNER ONLY</div>
+    <h1>Settings</h1>
+    <p>Keep daily access simple for your manager without exposing owner credentials.</p>
+  </div>
+  <span class="role-badge owner">OWNER</span>
+</section>
+
+<section class="settings-grid">
+  <article class="panel settings-card">
+    <div class="settings-card-head">
+      <div>
+        <div class="eyebrow">MANAGER ACCESS</div>
+        <h2>6-digit PIN</h2>
+      </div>
+      <span class="large-status {{ 'online' if manager_access.manager_pin_hash else 'offline' }}">
+        <i></i>{{ 'Enabled' if manager_access.manager_pin_hash else 'Not set' }}
+      </span>
+    </div>
+
+    <p class="settings-copy">Set a PIN your manager can use from the simple keypad login. The PIN is stored as a protected hash and is never shown again.</p>
+
+    <form method="post" action="{{ url_for('admin_set_manager_pin') }}" class="settings-form" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="settings-input-grid">
+        <label>
+          <span>New 6-digit PIN</span>
+          <input type="password" name="pin" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" required placeholder="••••••">
+        </label>
+        <label>
+          <span>Confirm PIN</span>
+          <input type="password" name="confirm_pin" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="new-password" required placeholder="••••••">
+        </label>
+      </div>
+      <div class="settings-actions">
+        <button class="btn primary" type="submit">{{ 'Change manager PIN' if manager_access.manager_pin_hash else 'Set manager PIN' }}</button>
+        {% if manager_access.manager_pin_hash %}<span class="settings-hint">Changing it signs out all remembered manager phones.</span>{% endif %}
+      </div>
+    </form>
+
+    {% if manager_access.manager_pin_hash %}
+    <div class="settings-meta">
+      <span>Remember device</span><strong>Up to 30 days</strong>
+      <span>Failed attempts</span><strong>5 before temporary lock</strong>
+      <span>Last PIN change</span><strong>{{ manager_access.updated_at or '—' }}</strong>
+    </div>
+    <form method="post" action="{{ url_for('admin_disable_manager_pin') }}" class="danger-zone" onsubmit="return confirm('Disable manager PIN access and sign out remembered manager phones?')">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn ghost danger-btn" type="submit">Disable manager PIN</button>
+    </form>
+    {% endif %}
+  </article>
+
+  <article class="panel settings-card permissions-card">
+    <div class="eyebrow">ACCESS LEVELS</div>
+    <h2>Owner vs Manager</h2>
+    <div class="permission-table">
+      <div class="permission-head"><span>Feature</span><strong>Owner</strong><strong>Manager</strong></div>
+      <div><span>Overview</span><b>✓</b><b>✓</b></div>
+      <div><span>Generate + Print</span><b>✓</b><b>✓</b></div>
+      <div><span>Vouchers</span><b>✓</b><b>✓</b></div>
+      <div><span>Clients</span><b>✓</b><b>✓</b></div>
+      <div><span>System details</span><b>✓</b><b class="permission-no">—</b></div>
+      <div><span>Security / PIN settings</span><b>✓</b><b class="permission-no">—</b></div>
+    </div>
+    <div class="owner-account-note">
+      <span>Owner account</span>
+      <strong>{{ owner_username }}</strong>
+      <small>Your existing owner password stays unchanged and is not displayed here.</small>
+    </div>
+  </article>
+</section>
+{% endblock %}
