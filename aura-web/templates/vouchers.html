@@ -49,7 +49,14 @@
       <span class="muted-cell">{{ v.created_display }}</span>
       <span><i class="badge {{ v.status }}">{{ v.status|title }}</i></span>
       <span class="muted-cell">{{ v.remaining }}</span>
-      <button class="copy-button" type="button" data-copy="{{ v.code }}">Copy</button>
+      <div class="voucher-actions">
+        <button class="copy-button" type="button" data-copy="{{ v.code }}">Copy</button>
+        <form method="post" action="{{ url_for('print_voucher', voucher_id=v.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="vouchers">
+          <button class="copy-button print-action" type="submit">Print</button>
+        </form>
+      </div>
     </article>
     {% else %}
     <div class="empty-state">No vouchers yet.</div>

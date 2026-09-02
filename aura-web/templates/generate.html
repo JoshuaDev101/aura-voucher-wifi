@@ -5,9 +5,12 @@
   <div>
     <div class="eyebrow">VOUCHER CREATION</div>
     <h1>Generate voucher</h1>
-    <p>Choose a duration. One tap creates one Omada voucher for one device.</p>
+    <p>Create a voucher only, or create + print a ready-to-hand receipt on the MX06.</p>
   </div>
-  <div class="heading-badge"><span>{{ counts.unused }}</span> ready</div>
+  <div class="printer-chip {{ 'ready' if printer.configured else 'offline' }}">
+    <i></i>
+    <span><b>{{ printer.name }}</b><small>{{ 'Configured · on-demand' if printer.configured else 'Printer setup needed' }}</small></span>
+  </div>
 </section>
 
 <section class="generate-layout">
@@ -19,17 +22,25 @@
 
     <div class="plan-grid v9-plans">
       {% for key, plan in plans.items() %}
-      <form method="post" action="{{ url_for('generate', plan_key=key) }}" class="plan-action">
+      <form method="post" action="{{ url_for('generate', plan_key=key) }}" class="plan-action printer-plan">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="plan-button" type="submit">
+        <div class="plan-button plan-card-static">
           <span class="plan-kicker">AURA ACCESS</span>
           <span class="plan-main"><b>{{ plan.name.split(' ')[0] }}</b><em>{{ 'DAY' if key == '1d' else 'DAYS' }}</em></span>
           <span class="plan-detail">{{ plan.short }} · single device</span>
-          <span class="plan-cta">Generate now <b>→</b></span>
-        </button>
+          <span class="plan-price">{{ '₱' ~ plan.price if plan.price else 'Price not set' }}</span>
+        </div>
+        <div class="plan-button-row">
+          <button class="plan-create" type="submit" name="print_after" value="0">Generate</button>
+          <button class="plan-print" type="submit" name="print_after" value="1" {% if not printer.configured %}disabled{% endif %}>Generate + Print</button>
+        </div>
       </form>
       {% endfor %}
     </div>
+
+    {% if not plans['1d'].price or not plans['3d'].price or not plans['7d'].price %}
+    <div class="price-note"><b>Pricing:</b> set <code>AURA_PRICE_1D</code>, <code>AURA_PRICE_3D</code>, and <code>AURA_PRICE_7D</code> in <code>/etc/aura/aura.env</code> so the receipt prints your real price.</div>
+    {% endif %}
   </article>
 
   <aside class="panel recent-panel">
@@ -39,10 +50,17 @@
     </div>
     <div class="mini-voucher-list">
       {% for v in recent %}
-      <button class="mini-voucher" type="button" data-copy="{{ v.code }}">
-        <span><strong>{{ v.code }}</strong><small>{{ v.plan_name }} · {{ v.created_display }}</small></span>
-        <span class="badge {{ v.status }}">{{ v.status }}</span>
-      </button>
+      <div class="mini-voucher print-ready-row">
+        <button class="mini-voucher-copy" type="button" data-copy="{{ v.code }}">
+          <span><strong>{{ v.code }}</strong><small>{{ v.plan_name }} · {{ v.created_display }}</small></span>
+          <span class="badge {{ v.status }}">{{ v.status }}</span>
+        </button>
+        <form method="post" action="{{ url_for('print_voucher', voucher_id=v.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="generate">
+          <button class="mini-print" type="submit" {% if not printer.configured %}disabled{% endif %}>Print</button>
+        </form>
+      </div>
       {% else %}
       <div class="empty-state">No vouchers yet.</div>
       {% endfor %}

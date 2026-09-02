@@ -82,7 +82,7 @@
     <div class="service-list">
       <div><span><i class="service-dot on"></i>Aura Web</span><strong>Online</strong></div>
       <div><span><i class="service-dot {{ 'on' if controller.online else 'off' }}"></i>Omada API</span><strong>{{ 'Online' if controller.online else 'Offline' }}</strong></div>
-      <div><span><i class="service-dot standby"></i>MX06 Printer</span><strong>Pending test</strong></div>
+      <div><span><i class="service-dot {{ 'on' if printer.configured else 'off' }}"></i>MX06 Printer</span><strong>{{ 'Configured · on-demand' if printer.configured else 'Setup needed' }}</strong></div>
       <div><span><i class="service-dot on"></i>Customer status</span><strong>Enabled</strong></div>
     </div>
     <p class="system-note">Resource values are read locally and do not add extra polling load to Omada.</p>

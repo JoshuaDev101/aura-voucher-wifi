@@ -8,6 +8,8 @@ import os
 import secrets
 import shutil
 import sqlite3
+import subprocess
+import sys
 import time
 
 from omada_api import OmadaClient, OmadaError
@@ -32,11 +34,31 @@ if not ADMIN_PASSWORD:
 DATA_DIR = Path(os.environ.get("AURA_DATA_DIR", "/var/lib/aura"))
 DB = DATA_DIR / "aura.db"
 
+def configured_price(env_name):
+    raw = str(os.environ.get(env_name, "")).strip()
+    if not raw:
+        return ""
+    try:
+        value = float(raw)
+        if value < 0:
+            return ""
+        return str(int(value)) if value.is_integer() else f"{value:.2f}".rstrip("0").rstrip(".")
+    except ValueError:
+        return ""
+
+
 PLANS = {
-    "1d": {"name": "1 Day", "minutes": 1440, "short": "24 hours"},
-    "3d": {"name": "3 Days", "minutes": 4320, "short": "72 hours"},
-    "7d": {"name": "7 Days", "minutes": 10080, "short": "168 hours"},
+    "1d": {"name": "1 Day", "minutes": 1440, "short": "24 hours", "price": configured_price("AURA_PRICE_1D")},
+    "3d": {"name": "3 Days", "minutes": 4320, "short": "72 hours", "price": configured_price("AURA_PRICE_3D")},
+    "7d": {"name": "7 Days", "minutes": 10080, "short": "168 hours", "price": configured_price("AURA_PRICE_7D")},
 }
+
+PRINTER_MAC = os.environ.get("AURA_PRINTER_MAC", "30:08:26:16:C8:49").strip()
+PRINTER_DRIVER = Path(os.environ.get("AURA_PRINTER_DRIVER", "/opt/aura-printer-test/printer.py"))
+PRINTER_SCRIPT = Path(__file__).with_name("printer_mx06.py")
+AURA_STATUS_URL = os.environ.get("AURA_STATUS_URL", "http://192.168.1.124/status").strip()
+PRINTER_MIN_AVAILABLE_MB = int(os.environ.get("AURA_PRINTER_MIN_AVAILABLE_MB", "64"))
+_PRINT_LOCK = Lock()
 
 _ADMIN_CACHE = {"expires": 0.0, "data": None}
 _ADMIN_CACHE_LOCK = Lock()
@@ -115,7 +137,7 @@ def get_voucher_counts():
 
 def save_voucher(plan, info):
     with sqlite3.connect(DB) as con:
-        con.execute(
+        cursor = con.execute(
             """
             INSERT OR REPLACE INTO vouchers(
                 code,
@@ -147,6 +169,83 @@ def save_voucher(plan, info):
                 datetime.now().astimezone().isoformat(timespec="seconds"),
             ),
         )
+        return int(cursor.lastrowid)
+
+
+def get_voucher(voucher_id):
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        row = con.execute("SELECT * FROM vouchers WHERE id = ?", (int(voucher_id),)).fetchone()
+    return dict(row) if row else None
+
+
+def price_for_voucher(voucher):
+    minutes = int(voucher.get("duration_minutes") or 0)
+    for plan in PLANS.values():
+        if int(plan["minutes"]) == minutes:
+            return plan.get("price") or ""
+    return ""
+
+
+def available_memory_mb():
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+    except Exception:
+        pass
+    return 0
+
+
+def get_printer_status():
+    configured = bool(PRINTER_MAC and PRINTER_SCRIPT.exists() and PRINTER_DRIVER.exists())
+    return {
+        "configured": configured,
+        "name": "MX06",
+        "mac": PRINTER_MAC,
+        "mode": "On-demand BLE",
+        "driver": "Ready" if PRINTER_DRIVER.exists() else "Driver missing",
+    }
+
+
+def print_voucher_receipt(voucher):
+    if not get_printer_status()["configured"]:
+        raise RuntimeError("MX06 printer driver is not configured.")
+
+    available = available_memory_mb()
+    if available and available < PRINTER_MIN_AVAILABLE_MB:
+        raise RuntimeError(
+            f"Printing paused: only {available} MB RAM is available. Try again after memory pressure drops."
+        )
+
+    if not _PRINT_LOCK.acquire(blocking=False):
+        raise RuntimeError("Printer is busy. Wait for the current print to finish.")
+
+    try:
+        price = price_for_voucher(voucher)
+        command = [
+            sys.executable,
+            str(PRINTER_SCRIPT),
+            "--code", str(voucher.get("code") or ""),
+            "--validity", str(voucher.get("plan_name") or "Voucher"),
+            "--price", price,
+            "--status-url", AURA_STATUS_URL,
+            "--mac", PRINTER_MAC,
+            "--driver", str(PRINTER_DRIVER),
+        ]
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Unknown printer error").strip().splitlines()
+            raise RuntimeError(detail[-1] if detail else "Printer failed.")
+        return True
+    finally:
+        _PRINT_LOCK.release()
 
 
 def derive_status(start_time, end_time):
@@ -731,6 +830,7 @@ def admin_generate():
         plans=PLANS,
         recent=recent,
         counts=get_voucher_counts(),
+        printer=get_printer_status(),
         active_page="generate",
         **snapshot,
     )
@@ -767,6 +867,7 @@ def admin_system():
     return render_template(
         "system.html",
         system=get_system_stats(),
+        printer=get_printer_status(),
         active_page="system",
         **snapshot,
     )
@@ -782,16 +883,47 @@ def generate(plan_key):
         flash("Unknown plan.", "error")
         return redirect(url_for("admin_generate"))
 
+    print_after = request.form.get("print_after") == "1"
+
     try:
         info = OmadaClient().create_voucher(plan["name"], plan["minutes"])
-        save_voucher(plan, info)
+        voucher_id = save_voucher(plan, info)
         invalidate_admin_snapshot()
-        flash(f"Voucher {info['code']} created · {plan['name']}", "success")
+
+        if print_after:
+            voucher = get_voucher(voucher_id)
+            try:
+                print_voucher_receipt(voucher)
+                flash(f"Voucher {info['code']} created + printed · {plan['name']}", "success")
+            except Exception as print_exc:
+                flash(f"Voucher {info['code']} was created, but printing failed: {print_exc}", "warning")
+        else:
+            flash(f"Voucher {info['code']} created · {plan['name']}", "success")
     except OmadaError as exc:
         flash(f"Voucher generation failed: {exc}", "error")
     except Exception as exc:
         flash(f"Voucher generation failed: {exc}", "error")
 
+    return redirect(url_for("admin_generate"))
+
+
+@app.post("/admin/print/<int:voucher_id>")
+@login_required
+def print_voucher(voucher_id):
+    require_csrf()
+    voucher = get_voucher(voucher_id)
+    if not voucher:
+        abort(404)
+
+    try:
+        print_voucher_receipt(voucher)
+        flash(f"Voucher {voucher['code']} sent to MX06.", "success")
+    except Exception as exc:
+        flash(f"Print failed: {exc}", "error")
+
+    destination = request.form.get("return_to", "generate")
+    if destination == "vouchers":
+        return redirect(url_for("admin_vouchers"))
     return redirect(url_for("admin_generate"))
 
 

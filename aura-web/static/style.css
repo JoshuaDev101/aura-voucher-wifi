@@ -174,3 +174,29 @@ h2{margin:6px 0 0;font-size:23px;line-height:1.08;letter-spacing:-.035em;font-we
   .voucher-summary-row>div{padding:11px 12px}.voucher-summary-row strong{font-size:16px}.filter-tabs button{padding:0 9px}.client-summary-grid{grid-template-columns:1fr 1fr;gap:8px}.client-summary{padding:13px}.client-summary>strong{font-size:32px}.client-card{padding:14px}.client-card-top{grid-template-columns:38px minmax(0,1fr)}.client-avatar{width:38px;height:38px}.session-badge{grid-column:1 / -1;width:max-content}.client-time-block>strong{font-size:24px}
   .system-card-head{flex-direction:column}.large-status{align-self:flex-start}.customer-session-card{padding:14px}.session-row{align-items:flex-start}.state-message-main h1{font-size:48px}
 }
+
+/* v11 · on-demand MX06 printing */
+.printer-chip{min-width:190px;padding:11px 13px;display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.printer-chip>i{width:9px;height:9px;border-radius:50%;background:var(--muted-2)}
+.printer-chip.ready>i{background:var(--green);box-shadow:0 0 0 4px rgba(118,230,171,.07)}
+.printer-chip.offline>i{background:var(--red)}
+.printer-chip span{display:flex;flex-direction:column;gap:3px}.printer-chip b{font-size:10px}.printer-chip small{color:var(--muted-2);font-size:8px}
+.printer-plan{display:flex;flex-direction:column;gap:8px}.plan-card-static{cursor:default}.plan-card-static:hover{transform:none}
+.plan-price{margin-top:auto;color:var(--accent);font-size:11px;font-weight:900}
+.plan-button-row{display:grid;grid-template-columns:.8fr 1.2fr;gap:7px}
+.plan-create,.plan-print,.mini-print{min-height:39px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--text);font-size:9px;font-weight:900;cursor:pointer;transition:.15s ease}
+.plan-print{border-color:transparent;background:var(--accent);color:var(--accent-text)}
+.plan-create:hover,.mini-print:hover{background:var(--surface-3)}.plan-print:hover{background:#e3ff89}
+.plan-create:disabled,.plan-print:disabled,.mini-print:disabled{opacity:.42;cursor:not-allowed}
+.price-note{margin-top:16px;padding:11px 13px;border:1px solid var(--line-soft);border-radius:11px;color:var(--muted-2);font-size:8px;line-height:1.65}.price-note b{color:var(--muted)}.price-note code{color:var(--accent);font-size:8px}
+.print-ready-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:stretch}
+.mini-voucher-copy{width:100%;min-width:0;padding:0;border:0;background:transparent;color:inherit;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer}
+.mini-print{height:100%;padding:0 11px}
+.voucher-actions{display:flex;align-items:center;justify-content:flex-end;gap:5px}.voucher-actions form{margin:0}.print-action{border-color:rgba(216,255,99,.16);color:var(--accent)}
+
+@media(max-width:780px){
+  .printer-chip{min-width:0}.plan-button-row{grid-template-columns:1fr 1.25fr}.voucher-actions{align-items:flex-end;flex-direction:column}
+}
+@media(max-width:480px){
+  .page-heading .printer-chip{width:100%}.plan-button-row{grid-template-columns:1fr}.plan-create,.plan-print{min-height:44px}.print-ready-row{grid-template-columns:minmax(0,1fr) 58px}
+}
