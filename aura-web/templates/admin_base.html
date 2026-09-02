@@ -4,7 +4,7 @@
   <header class="site-header">
     <div class="header-inner">
       <a class="brand-lockup compact" href="{{ url_for('admin_dashboard') }}" aria-label="Aura admin console">
-        <div class="brand-mark">A</div>
+        <div class="brand-mark brand-mark-image"><img src="{{ url_for('static', filename='branding/icon.png') }}" alt="" aria-hidden="true"></div>
         <div>
           <div class="brand-word">AURA</div>
           <div class="brand-caption">{{ 'Owner Console' if is_owner else 'Manager Console' }}</div>
@@ -50,7 +50,7 @@
 
     <footer class="footer-row">
       <span>Aura Voucher WiFi</span>
-      <span>{{ 'Owner' if is_owner else 'Manager' }} console · v13</span>
+      <span>{{ 'Owner' if is_owner else 'Manager' }} console · v13.1</span>
     </footer>
   </main>
 
@@ -70,7 +70,10 @@
         <div class="print-progress-check">✓</div>
         <div class="print-progress-error">!</div>
       </div>
-      <div class="eyebrow" id="print-progress-kicker">MX06 PRINTER</div>
+      <div class="print-progress-brandline">
+        <img src="{{ url_for('static', filename='branding/icon.png') }}" alt="" aria-hidden="true">
+        <div class="eyebrow" id="print-progress-kicker">MX06 PRINTER</div>
+      </div>
       <h2 id="print-progress-title">Printing voucher</h2>
       <p id="print-progress-message" aria-live="polite">Connecting to the printer and sending your receipt. Keep the MX06 powered on.</p>
       <div id="print-progress-code" class="print-progress-code" hidden></div>

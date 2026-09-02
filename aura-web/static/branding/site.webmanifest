@@ -1,0 +1,20 @@
+{
+  "name": "Aura Voucher WiFi",
+  "short_name": "Aura WiFi",
+  "start_url": "/admin/",
+  "display": "standalone",
+  "background_color": "#080a0d",
+  "theme_color": "#080a0d",
+  "icons": [
+    {
+      "src": "/static/branding/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/branding/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
