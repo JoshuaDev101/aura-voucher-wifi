@@ -130,7 +130,14 @@ def main():
             "-q",
             "2",
         ]
-        result = subprocess.run(command, text=True, capture_output=True, timeout=45, check=False)
+        result = subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            timeout=45,
+            check=False,
+            cwd=str(driver.parent),
+        )
         if result.returncode != 0:
             output = (result.stderr or result.stdout or "Printer driver failed").strip()
             raise RuntimeError(output.splitlines()[-1] if output else "Printer driver failed")
