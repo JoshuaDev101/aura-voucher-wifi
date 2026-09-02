@@ -56,6 +56,11 @@ def centered(draw, y, text, font, width=384):
 
 
 def build_receipt(code: str, validity: str, price: str, status_url: str):
+    """Render a compact 57 mm / 384 px voucher receipt.
+
+    Keep paper use low: only the Aura title, voucher code, validity, price,
+    and a small status QR are printed. No footer paragraphs or large gaps.
+    """
     try:
         from PIL import Image, ImageDraw
         import qrcode
@@ -65,44 +70,55 @@ def build_receipt(code: str, validity: str, price: str, status_url: str):
         ) from exc
 
     width = 384
-    height = 590
+    height = 372
     image = Image.new("L", (width, height), 255)
     draw = ImageDraw.Draw(image)
 
-    title = load_font(24, bold=True)
-    small_bold = load_font(16, bold=True)
-    tiny = load_font(13, bold=False)
-    code_font = load_font(43, bold=True)
-    value_font = load_font(21, bold=True)
+    title = load_font(22, bold=True)
+    label = load_font(12, bold=True)
+    code_font = load_font(40, bold=True)
+    value_font = load_font(19, bold=True)
 
-    centered(draw, 28, "AURA WIFI VOUCHER", title, width)
-    draw.line((38, 66, width - 38, 66), fill=0, width=2)
+    # Header — tight but still readable on 57 mm paper.
+    centered(draw, 14, "AURA WIFI VOUCHER", title, width)
+    draw.line((30, 48, width - 30, 48), fill=0, width=2)
 
-    centered(draw, 92, "VOUCHER CODE", tiny, width)
-    centered(draw, 116, code, code_font, width)
+    # Voucher code is the visual focus.
+    centered(draw, 62, code, code_font, width)
 
-    left_x = 42
-    right_x = 224
-    draw.text((left_x, 184), "VALIDITY", fill=0, font=tiny)
-    draw.text((right_x, 184), "PRICE", fill=0, font=tiny)
-    draw.text((left_x, 208), validity.upper(), fill=0, font=value_font)
+    # Validity + price share one compact row.
+    left_center = 110
+    right_center = 274
+    validity_text = validity.upper()
     price_text = f"₱{price}" if price else "—"
-    draw.text((right_x, 208), price_text, fill=0, font=value_font)
 
-    draw.line((38, 258, width - 38, 258), fill=0, width=2)
+    lw = text_width(draw, "VALIDITY", label)
+    pw = text_width(draw, "PRICE", label)
+    draw.text((left_center - lw // 2, 122), "VALIDITY", fill=0, font=label)
+    draw.text((right_center - pw // 2, 122), "PRICE", fill=0, font=label)
 
-    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=4, border=2)
+    vw = text_width(draw, validity_text, value_font)
+    rw = text_width(draw, price_text, value_font)
+    draw.text((left_center - vw // 2, 143), validity_text, fill=0, font=value_font)
+    draw.text((right_center - rw // 2, 143), price_text, fill=0, font=value_font)
+
+    draw.line((30, 180, width - 30, 180), fill=0, width=1)
+
+    # Small QR keeps the receipt useful without wasting paper.
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=3,
+        border=1,
+    )
     qr.add_data(status_url)
     qr.make(fit=True)
     qr_img = qr.make_image(fill_color="black", back_color="white").convert("L")
-    qr_img.thumbnail((190, 190))
+    qr_img.thumbnail((146, 146))
     qx = (width - qr_img.width) // 2
-    image.paste(qr_img, (qx, 286))
+    image.paste(qr_img, (qx, 194))
 
-    centered(draw, 493, "SCAN FOR AURA STATUS", small_bold, width)
-    centered(draw, 522, "Remaining time · voucher status", tiny, width)
-
-    # White feed margin. The tested Cat-Printer driver handles the raster protocol.
+    # Small bottom feed area only; no marketing/footer copy.
     return image.convert("1", dither=Image.Dither.NONE)
 
 

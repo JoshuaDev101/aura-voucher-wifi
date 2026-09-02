@@ -65,3 +65,10 @@ First production test
 4. Generate a temporary 1-day voucher using Generate + Print.
 5. Verify code, validity, price, QR and paper feed.
 6. Re-run free -h and process RSS after the print to confirm memory returned.
+
+
+V11.2 COMPACT RECEIPT
+- Reduced MX06 receipt height from 590px to 372px.
+- Keeps only AURA WIFI VOUCHER, code, validity, price, and QR.
+- Smaller QR and tighter spacing to reduce 57mm paper use.
+- Printing remains one-shot / low-load.
