@@ -201,3 +201,28 @@ h2{margin:6px 0 0;font-size:23px;line-height:1.08;letter-spacing:-.035em;font-we
 @media(max-width:480px){
   .page-heading .printer-chip{width:100%}.plan-button-row{grid-template-columns:1fr}.plan-create,.plan-print{min-height:44px}.print-ready-row{grid-template-columns:minmax(0,1fr) 58px}
 }
+
+
+/* v12.1 · print progress modal */
+body.print-modal-open{overflow:hidden}
+.print-progress[hidden]{display:none!important}
+.print-progress{position:fixed;inset:0;z-index:120;display:grid;place-items:center;padding:20px}
+.print-progress-backdrop{position:absolute;inset:0;background:rgba(3,5,7,.78);backdrop-filter:blur(12px)}
+.print-progress-card{position:relative;width:min(100%,390px);padding:30px;border:1px solid #2a3440;border-radius:22px;background:linear-gradient(155deg,#12171d,#0c1014);box-shadow:0 28px 90px rgba(0,0,0,.52);text-align:center}
+.print-progress-card h2{margin:9px 0 10px;font-size:27px;letter-spacing:-.04em}
+.print-progress-card p{max-width:310px;margin:0 auto;color:var(--muted);font-size:11px;line-height:1.65}
+.print-progress-visual{width:76px;height:76px;margin:0 auto 23px;display:grid;place-items:center;border:1px solid var(--line);border-radius:22px;background:rgba(255,255,255,.018)}
+.print-progress-spinner{width:34px;height:34px;border:3px solid rgba(216,255,99,.15);border-top-color:var(--accent);border-radius:50%;animation:aura-print-spin .8s linear infinite}
+.print-progress-check,.print-progress-error{display:none;font-size:34px;font-weight:950;line-height:1}
+.print-progress-check{color:var(--green)}
+.print-progress-error{color:var(--red)}
+.print-progress[data-state="success"] .print-progress-spinner,.print-progress[data-state="error"] .print-progress-spinner{display:none}
+.print-progress[data-state="success"] .print-progress-check{display:block}
+.print-progress[data-state="error"] .print-progress-error{display:block}
+.print-progress[data-state="success"] .print-progress-visual{border-color:rgba(118,230,171,.22);background:rgba(118,230,171,.045)}
+.print-progress[data-state="error"] .print-progress-visual{border-color:rgba(255,129,143,.22);background:rgba(255,129,143,.04)}
+.print-progress-code{width:max-content;max-width:100%;margin:18px auto 0;padding:9px 13px;border:1px solid var(--line);border-radius:10px;color:var(--text);font-size:18px;font-weight:900;letter-spacing:.08em}
+.print-progress-close{margin-top:22px;min-height:44px}
+@keyframes aura-print-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.print-progress-spinner{animation-duration:1.8s}}
+@media(max-width:480px){.print-progress{padding:14px}.print-progress-card{padding:25px 20px;border-radius:19px}.print-progress-card h2{font-size:24px}}

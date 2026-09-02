@@ -51,7 +51,7 @@
       <span class="muted-cell">{{ v.remaining }}</span>
       <div class="voucher-actions">
         <button class="copy-button" type="button" data-copy="{{ v.code }}">Copy</button>
-        <form method="post" action="{{ url_for('print_voucher', voucher_id=v.id) }}">
+        <form method="post" action="{{ url_for('print_voucher', voucher_id=v.id) }}" data-print-ui>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="return_to" value="vouchers">
           <button class="copy-button print-action" type="submit">Print</button>

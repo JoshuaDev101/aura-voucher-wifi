@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, abort
+from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, jsonify
 from functools import wraps
 from datetime import datetime
 from pathlib import Path
@@ -875,6 +875,10 @@ def admin_system():
     )
 
 
+def print_ui_request():
+    return request.headers.get("X-Aura-Print-UI") == "1"
+
+
 @app.post("/admin/generate/<plan_key>")
 @login_required
 def generate(plan_key):
@@ -882,6 +886,8 @@ def generate(plan_key):
     plan = PLANS.get(plan_key)
 
     if not plan:
+        if print_ui_request():
+            return jsonify(ok=False, message="Unknown voucher plan."), 400
         flash("Unknown plan.", "error")
         return redirect(url_for("admin_generate"))
 
@@ -896,14 +902,34 @@ def generate(plan_key):
             voucher = get_voucher(voucher_id)
             try:
                 print_voucher_receipt(voucher)
+                if print_ui_request():
+                    return jsonify(
+                        ok=True,
+                        printed=True,
+                        code=info["code"],
+                        plan=plan["name"],
+                        message="Voucher printed successfully.",
+                    )
                 flash(f"Voucher {info['code']} created + printed · {plan['name']}", "success")
             except Exception as print_exc:
+                if print_ui_request():
+                    return jsonify(
+                        ok=False,
+                        created=True,
+                        code=info["code"],
+                        plan=plan["name"],
+                        message=f"Voucher created, but printing failed: {print_exc}",
+                    ), 500
                 flash(f"Voucher {info['code']} was created, but printing failed: {print_exc}", "warning")
         else:
             flash(f"Voucher {info['code']} created · {plan['name']}", "success")
     except OmadaError as exc:
+        if print_after and print_ui_request():
+            return jsonify(ok=False, message=f"Voucher generation failed: {exc}"), 502
         flash(f"Voucher generation failed: {exc}", "error")
     except Exception as exc:
+        if print_after and print_ui_request():
+            return jsonify(ok=False, message=f"Voucher generation failed: {exc}"), 500
         flash(f"Voucher generation failed: {exc}", "error")
 
     return redirect(url_for("admin_generate"))
@@ -915,12 +941,24 @@ def print_voucher(voucher_id):
     require_csrf()
     voucher = get_voucher(voucher_id)
     if not voucher:
+        if print_ui_request():
+            return jsonify(ok=False, message="Voucher not found."), 404
         abort(404)
 
     try:
         print_voucher_receipt(voucher)
+        if print_ui_request():
+            return jsonify(
+                ok=True,
+                printed=True,
+                code=voucher["code"],
+                plan=voucher.get("plan_name") or "Voucher",
+                message="Voucher printed successfully.",
+            )
         flash(f"Voucher {voucher['code']} sent to MX06.", "success")
     except Exception as exc:
+        if print_ui_request():
+            return jsonify(ok=False, code=voucher.get("code"), message=f"Print failed: {exc}"), 500
         flash(f"Print failed: {exc}", "error")
 
     destination = request.form.get("return_to", "generate")

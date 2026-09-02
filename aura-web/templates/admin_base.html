@@ -47,7 +47,7 @@
 
     <footer class="footer-row">
       <span>Aura Voucher WiFi</span>
-      <span>Private owner console · v12</span>
+      <span>Private owner console · v12.1</span>
     </footer>
   </main>
 
@@ -58,5 +58,119 @@
     <a class="{{ 'active' if active_page == 'clients' else '' }}" href="{{ url_for('admin_clients') }}"><span>◎</span>Clients</a>
     <a class="{{ 'active' if active_page == 'system' else '' }}" href="{{ url_for('admin_system') }}"><span>◉</span>System</a>
   </nav>
+
+  <div id="print-progress" class="print-progress" hidden aria-hidden="true">
+    <div class="print-progress-backdrop"></div>
+    <section class="print-progress-card" role="dialog" aria-modal="true" aria-labelledby="print-progress-title">
+      <div class="print-progress-visual" aria-hidden="true">
+        <div class="print-progress-spinner"></div>
+        <div class="print-progress-check">✓</div>
+        <div class="print-progress-error">!</div>
+      </div>
+      <div class="eyebrow" id="print-progress-kicker">MX06 PRINTER</div>
+      <h2 id="print-progress-title">Printing voucher</h2>
+      <p id="print-progress-message">Connecting to the printer and sending your receipt. Keep the MX06 powered on.</p>
+      <div id="print-progress-code" class="print-progress-code" hidden></div>
+      <button id="print-progress-close" class="btn primary full print-progress-close" type="button" hidden>Close</button>
+    </section>
+  </div>
 </div>
+
+<script>
+(() => {
+  const modal = document.getElementById('print-progress');
+  if (!modal) return;
+
+  const title = document.getElementById('print-progress-title');
+  const message = document.getElementById('print-progress-message');
+  const kicker = document.getElementById('print-progress-kicker');
+  const code = document.getElementById('print-progress-code');
+  const close = document.getElementById('print-progress-close');
+  let reloadOnClose = false;
+
+  const setState = (state, payload = {}) => {
+    modal.dataset.state = state;
+    code.hidden = !payload.code;
+    code.textContent = payload.code || '';
+
+    if (state === 'printing') {
+      kicker.textContent = 'MX06 PRINTER';
+      title.textContent = 'Printing voucher';
+      message.textContent = 'Connecting to the printer and sending your receipt. Keep the MX06 powered on.';
+      close.hidden = true;
+      return;
+    }
+
+    close.hidden = false;
+    if (state === 'success') {
+      kicker.textContent = 'PRINT COMPLETE';
+      title.textContent = 'Done printing';
+      message.textContent = payload.message || 'Your voucher receipt is ready.';
+    } else {
+      kicker.textContent = payload.created ? 'VOUCHER CREATED' : 'PRINT ERROR';
+      title.textContent = payload.created ? 'Printing failed' : 'Could not print';
+      message.textContent = payload.message || 'The MX06 could not finish this print.';
+    }
+  };
+
+  const open = () => {
+    reloadOnClose = false;
+    setState('printing');
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('print-modal-open');
+  };
+
+  const finish = (state, payload) => {
+    reloadOnClose = Boolean(payload && payload.created);
+    setState(state, payload || {});
+    close.focus();
+  };
+
+  close.addEventListener('click', () => {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('print-modal-open');
+    if (reloadOnClose) window.location.reload();
+  });
+
+  document.querySelectorAll('form[data-print-ui]').forEach((form) => {
+    form.addEventListener('submit', async (event) => {
+      const submitter = event.submitter;
+      if (submitter && submitter.dataset.printUi === '0') return;
+      if (submitter && submitter.disabled) return;
+
+      event.preventDefault();
+      open();
+
+      const data = new FormData(form);
+      if (submitter && submitter.name) data.set(submitter.name, submitter.value);
+
+      try {
+        const response = await fetch(form.action, {
+          method: 'POST',
+          body: data,
+          headers: {
+            'X-Aura-Print-UI': '1',
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+        let payload = {};
+        try { payload = await response.json(); } catch (_) {}
+        if (response.ok && payload.ok) {
+          finish('success', payload);
+        } else {
+          finish('error', {
+            ...payload,
+            message: payload.message || `Printing failed (HTTP ${response.status}).`
+          });
+        }
+      } catch (_) {
+        finish('error', {message: 'Could not reach Aura while printing. Check the network and try again.'});
+      }
+    });
+  });
+})();
+</script>
 {% endblock %}

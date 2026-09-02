@@ -22,7 +22,7 @@
 
     <div class="plan-grid v9-plans">
       {% for key, plan in plans.items() %}
-      <form method="post" action="{{ url_for('generate', plan_key=key) }}" class="plan-action printer-plan">
+      <form method="post" action="{{ url_for('generate', plan_key=key) }}" class="plan-action printer-plan" data-print-ui>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="plan-button plan-card-static">
           <span class="plan-kicker">AURA ACCESS</span>
@@ -31,8 +31,8 @@
           <span class="plan-price">{{ '₱' ~ plan.price if plan.price else 'Price not set' }}</span>
         </div>
         <div class="plan-button-row">
-          <button class="plan-create" type="submit" name="print_after" value="0">Generate</button>
-          <button class="plan-print" type="submit" name="print_after" value="1" {% if not printer.configured %}disabled{% endif %}>Generate + Print</button>
+          <button class="plan-create" type="submit" name="print_after" value="0" data-print-ui="0">Generate</button>
+          <button class="plan-print" type="submit" name="print_after" value="1" data-print-ui="1" {% if not printer.configured %}disabled{% endif %}>Generate + Print</button>
         </div>
       </form>
       {% endfor %}
@@ -55,7 +55,7 @@
           <span><strong>{{ v.code }}</strong><small>{{ v.plan_name }} · {{ v.created_display }}</small></span>
           <span class="badge {{ v.status }}">{{ v.status }}</span>
         </button>
-        <form method="post" action="{{ url_for('print_voucher', voucher_id=v.id) }}">
+        <form method="post" action="{{ url_for('print_voucher', voucher_id=v.id) }}" data-print-ui>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="return_to" value="generate">
           <button class="mini-print" type="submit" {% if not printer.configured %}disabled{% endif %}>Print</button>
