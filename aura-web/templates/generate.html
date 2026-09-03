@@ -7,9 +7,12 @@
     <h1>Generate voucher</h1>
     <p>Create a voucher only, or create + print a ready-to-hand receipt on the MX06.</p>
   </div>
-  <div class="printer-chip {{ 'ready' if printer.configured else 'offline' }}">
-    <i></i>
-    <span><b>{{ printer.name }}</b><small>{{ 'Configured · on-demand' if printer.configured else 'Printer setup needed' }}</small></span>
+  <div class="page-heading-actions">
+    <a class="btn secondary bulk-sheet-link" href="{{ url_for('admin_bulk') }}">▦ Bulk print</a>
+    <div class="printer-chip {{ 'ready' if printer.configured else 'offline' }}">
+      <i></i>
+      <span><b>{{ printer.name }}</b><small>{{ 'Configured · on-demand' if printer.configured else 'Printer setup needed' }}</small></span>
+    </div>
   </div>
 </section>
 

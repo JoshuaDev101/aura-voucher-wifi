@@ -1,0 +1,99 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · Bulk Thermal Vouchers{% endblock %}
+{% block admin_content %}
+<section class="page-heading bulk-page-heading">
+  <div>
+    <div class="eyebrow">BULK VOUCHERS</div>
+    <h1>Bulk thermal print</h1>
+    <p>Create 10–50 vouchers at once, then print them as one continuous 57 mm MX06 strip with a cut guide after every voucher.</p>
+  </div>
+  <div class="page-heading-actions">
+    <a class="btn secondary" href="{{ url_for('admin_generate') }}">← Single voucher</a>
+    <div class="printer-chip {{ 'ready' if printer.bulk_ready else 'offline' }}">
+      <i></i>
+      <span><b>{{ printer.name }}</b><small>{{ 'Bulk print ready' if printer.bulk_ready else 'Bulk helper not ready' }}</small></span>
+    </div>
+  </div>
+</section>
+
+<section class="bulk-admin-grid">
+  <article class="panel bulk-create-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">CREATE BATCH</div><h2>Voucher strip</h2></div>
+      <span class="panel-note">One code · one cut</span>
+    </div>
+
+    <form method="post" action="{{ url_for('admin_bulk_generate') }}" class="bulk-form" id="bulk-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="bulk-form-label"><span>DURATION</span><small>Choose one plan for the whole batch</small></div>
+      <div class="bulk-plan-picker" role="radiogroup" aria-label="Voucher duration">
+        {% for key, plan in plans.items() %}
+        <label class="bulk-plan-option">
+          <input type="radio" name="plan" value="{{ key }}" {% if key == '7h' %}checked{% endif %}>
+          <span>
+            <b>{{ plan.amount }}</b><em>{{ plan.unit }}</em>
+            <small>{{ '₱' ~ plan.price if plan.price else 'No price' }}</small>
+          </span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="bulk-form-label"><span>QUANTITY</span><small>Multiples of 10 · maximum 50</small></div>
+      <div class="bulk-quantity-picker" role="radiogroup" aria-label="Voucher quantity">
+        {% for amount in [10, 20, 30, 40, 50] %}
+        <label>
+          <input type="radio" name="quantity" value="{{ amount }}" {% if amount == 20 %}checked{% endif %}>
+          <span>{{ amount }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <div class="bulk-sheet-summary">
+        <div><span>Paper</span><strong>57 mm thermal</strong></div>
+        <div><span>Layout</span><strong>1 voucher per cut</strong></div>
+        <div><span>Cut guide</span><strong>Dashed line</strong></div>
+        <div><span>QR</span><strong>Exact voucher code</strong></div>
+      </div>
+
+      <button class="btn primary bulk-generate-btn" id="bulk-generate-btn" type="submit">Generate voucher batch</button>
+      <p class="bulk-create-note">Generation and printing are separate. Aura creates the codes first so a printer error never creates duplicate vouchers.</p>
+    </form>
+  </article>
+
+  <aside class="panel bulk-history-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">RECENT</div><h2>Bulk batches</h2></div>
+    </div>
+    <div class="bulk-batch-list">
+      {% for batch in batches %}
+      <a class="bulk-batch-row" href="{{ url_for('admin_bulk_batch', batch_id=batch.batch_id) }}">
+        <span class="bulk-batch-count">{{ batch.quantity }}</span>
+        <span class="bulk-batch-copy">
+          <strong>{{ batch.plan_name }}</strong>
+          <small>{{ batch.created_display }} · MX06 thermal strip</small>
+        </span>
+        <span class="bulk-batch-open">Open →</span>
+      </a>
+      {% else %}
+      <div class="empty-state">No bulk batches yet.</div>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<script>
+(() => {
+  const form = document.getElementById('bulk-form');
+  const button = document.getElementById('bulk-generate-btn');
+  if (!form || !button) return;
+  form.addEventListener('submit', () => {
+    const selected = form.querySelector('input[name="quantity"]:checked');
+    const amount = selected ? selected.value : '';
+    button.disabled = true;
+    button.textContent = amount ? `Generating ${amount} vouchers…` : 'Generating vouchers…';
+    form.classList.add('is-generating');
+  });
+})();
+</script>
+{% endblock %}

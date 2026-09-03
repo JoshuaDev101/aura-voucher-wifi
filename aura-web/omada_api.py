@@ -226,9 +226,17 @@ class OmadaClient:
         )
         return matches[0]
 
-    def create_voucher(self, plan_name, minutes):
+    def create_vouchers(self, plan_name, minutes, amount=1):
+        """Create 1-50 vouchers in one Omada voucher group/API request."""
         if not self.site or not self.rate:
             raise OmadaError("Site ID / Rate Limit ID not configured.")
+
+        try:
+            amount = int(amount)
+        except (TypeError, ValueError):
+            amount = 0
+        if amount < 1 or amount > 50:
+            raise OmadaError("Voucher amount must be between 1 and 50.")
 
         self.login()
 
@@ -238,7 +246,7 @@ class OmadaClient:
         )
 
         payload = {
-            "amount": 1,
+            "amount": amount,
             "applyToAllPortals": True,
             "codeForm": [0, 1],
             "codeLength": 6,
@@ -262,7 +270,7 @@ class OmadaClient:
             headers={**self._headers(), "Content-Type": "application/json"},
             json=payload,
             verify=self.verify,
-            timeout=15,
+            timeout=20,
         )
         d = self._json(r, "Create voucher group")
         gid = (d.get("result") or {}).get("id")
@@ -270,41 +278,69 @@ class OmadaClient:
         if not gid:
             raise OmadaError("No group ID returned by Omada.")
 
-        voucher = self.get_voucher_from_group(gid)
+        rows = self.get_vouchers_from_group(gid, expected=amount)
+        if not rows:
+            raise OmadaError("No voucher codes returned by Omada.")
 
-        if not voucher or not voucher.get("code"):
+        return [
+            {
+                "code": voucher["code"],
+                "group_id": gid,
+                "voucher_id": voucher.get("id"),
+                "status": voucher.get("status"),
+                "start_time": voucher.get("startTime"),
+                "end_time": voucher.get("endTime"),
+            }
+            for voucher in rows
+            if voucher.get("code")
+        ]
+
+    def create_voucher(self, plan_name, minutes):
+        rows = self.create_vouchers(plan_name, minutes, 1)
+        if not rows:
             raise OmadaError("No voucher code returned by Omada.")
+        return rows[0]
 
-        return {
-            "code": voucher["code"],
-            "group_id": gid,
-            "voucher_id": voucher.get("id"),
-            "status": voucher.get("status"),
-            "start_time": voucher.get("startTime"),
-            "end_time": voucher.get("endTime"),
-        }
-
-    def get_voucher_from_group(self, group_id, code=None, voucher_id=None):
+    def get_vouchers_from_group(self, group_id, expected=None):
         if not self.site:
             raise OmadaError("Site ID not configured.")
 
         if not self.token:
             self.login()
 
-        r = self.s.get(
-            f"{self.base}/{self.oid}/api/v2/hotspot/"
-            f"sites/{self.site}/voucherGroups/{group_id}",
-            params={
-                "token": self.token,
-                "currentPage": 1,
-                "currentPageSize": 20,
-            },
-            headers=self._headers(),
-            verify=self.verify,
-            timeout=10,
-        )
-        d = self._json(r, "Voucher group detail")
-        rows = (d.get("result") or {}).get("data", []) or []
+        rows = []
+        page = 1
+        page_size = 100
+        while page <= 3:
+            r = self.s.get(
+                f"{self.base}/{self.oid}/api/v2/hotspot/"
+                f"sites/{self.site}/voucherGroups/{group_id}",
+                params={
+                    "token": self.token,
+                    "currentPage": page,
+                    "currentPageSize": page_size,
+                },
+                headers=self._headers(),
+                verify=self.verify,
+                timeout=10,
+            )
+            d = self._json(r, "Voucher group detail")
+            result = d.get("result") or {}
+            page_rows = result.get("data", []) or []
+            rows.extend(page_rows)
+
+            if expected and len(rows) >= int(expected):
+                break
+            total = int(result.get("totalRows") or len(rows))
+            if not page_rows or page * page_size >= total:
+                break
+            page += 1
+
+        return rows
+
+
+    def get_voucher_from_group(self, group_id, code=None, voucher_id=None):
+        rows = self.get_vouchers_from_group(group_id)
 
         if voucher_id:
             match = next(
@@ -320,3 +356,4 @@ class OmadaClient:
                 return match
 
         return rows[0] if rows else None
+

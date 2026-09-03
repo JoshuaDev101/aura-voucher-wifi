@@ -3,8 +3,13 @@ from functools import wraps
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
+from contextlib import contextmanager
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import generate_password_hash, check_password_hash
+import base64
+import io
+import json
+import fcntl
 import os
 import secrets
 import shutil
@@ -65,8 +70,11 @@ PLANS = {
 PRINTER_MAC = os.environ.get("AURA_PRINTER_MAC", "30:08:26:16:C8:49").strip()
 PRINTER_DRIVER = Path(os.environ.get("AURA_PRINTER_DRIVER", "/opt/aura-printer-test/printer.py"))
 PRINTER_SCRIPT = Path(__file__).with_name("printer_mx06.py")
+BULK_PRINTER_SCRIPT = Path(__file__).with_name("printer_mx06_bulk.py")
 AURA_STATUS_URL = os.environ.get("AURA_STATUS_URL", "http://192.168.1.124/status").strip()
 PRINTER_MIN_AVAILABLE_MB = int(os.environ.get("AURA_PRINTER_MIN_AVAILABLE_MB", "64"))
+PRINT_JOB_DIR = DATA_DIR / "print-jobs"
+PRINTER_LOCK_FILE = DATA_DIR / "mx06-printer.lock"
 _PRINT_LOCK = Lock()
 
 _ADMIN_CACHE = {"expires": 0.0, "data": None}
@@ -101,6 +109,8 @@ def init_db():
             "start_time": "ALTER TABLE vouchers ADD COLUMN start_time INTEGER",
             "end_time": "ALTER TABLE vouchers ADD COLUMN end_time INTEGER",
             "last_sync": "ALTER TABLE vouchers ADD COLUMN last_sync TEXT",
+            "batch_id": "ALTER TABLE vouchers ADD COLUMN batch_id TEXT",
+            "batch_index": "ALTER TABLE vouchers ADD COLUMN batch_index INTEGER",
         }
 
         for column, sql in migrations.items():
@@ -266,7 +276,25 @@ def get_voucher_counts():
     }
 
 
-def save_voucher(plan, info):
+def _voucher_values(plan, info, batch_id=None, batch_index=None):
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    return (
+        info["code"],
+        plan["name"],
+        int(plan["minutes"]),
+        now,
+        derive_status(info.get("start_time"), info.get("end_time")),
+        info.get("group_id"),
+        info.get("voucher_id"),
+        int(info.get("start_time") or 0),
+        int(info.get("end_time") or 0),
+        now,
+        batch_id,
+        batch_index,
+    )
+
+
+def save_voucher(plan, info, batch_id=None, batch_index=None):
     with sqlite3.connect(DB) as con:
         cursor = con.execute(
             """
@@ -280,27 +308,109 @@ def save_voucher(plan, info):
                 omada_voucher_id,
                 start_time,
                 end_time,
-                last_sync
+                last_sync,
+                batch_id,
+                batch_index
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                info["code"],
-                plan["name"],
-                int(plan["minutes"]),
-                datetime.now().astimezone().isoformat(timespec="seconds"),
-                derive_status(
-                    info.get("start_time"),
-                    info.get("end_time"),
-                ),
-                info.get("group_id"),
-                info.get("voucher_id"),
-                int(info.get("start_time") or 0),
-                int(info.get("end_time") or 0),
-                datetime.now().astimezone().isoformat(timespec="seconds"),
-            ),
+            _voucher_values(plan, info, batch_id, batch_index),
         )
         return int(cursor.lastrowid)
+
+
+def save_bulk_vouchers(plan, infos, batch_id):
+    """Save one Omada bulk group in a single local SQLite transaction."""
+    ids = []
+    with sqlite3.connect(DB) as con:
+        for index, info in enumerate(infos, start=1):
+            cursor = con.execute(
+                """
+                INSERT OR REPLACE INTO vouchers(
+                    code,
+                    plan_name,
+                    duration_minutes,
+                    created_at,
+                    status,
+                    omada_group_id,
+                    omada_voucher_id,
+                    start_time,
+                    end_time,
+                    last_sync,
+                    batch_id,
+                    batch_index
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                _voucher_values(plan, info, batch_id, index),
+            )
+            ids.append(int(cursor.lastrowid))
+    return ids
+
+
+def get_batch_vouchers(batch_id):
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """
+            SELECT * FROM vouchers
+             WHERE batch_id = ?
+             ORDER BY COALESCE(batch_index, id), id
+            """,
+            (str(batch_id),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_recent_bulk_batches(limit=6):
+    with sqlite3.connect(DB) as con:
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            """
+            SELECT batch_id,
+                   MIN(plan_name) AS plan_name,
+                   MIN(duration_minutes) AS duration_minutes,
+                   COUNT(*) AS quantity,
+                   MIN(created_at) AS created_at
+              FROM vouchers
+             WHERE batch_id IS NOT NULL AND batch_id <> ''
+             GROUP BY batch_id
+             ORDER BY MAX(id) DESC
+             LIMIT ?
+            """,
+            (int(limit),),
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        item["created_display"] = format_created(item.get("created_at") or "")
+        result.append(item)
+    return result
+
+
+def voucher_qr_data_uri(code):
+    """Create a small local QR containing only the voucher code.
+
+    The QR is intentionally self-contained: no external QR service and no
+    Internet dependency. Scanning it reveals/copies the exact voucher code.
+    """
+    try:
+        import qrcode
+    except ImportError:
+        return ""
+
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=4,
+        border=1,
+    )
+    qr.add_data(str(code))
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white").convert("L")
+    out = io.BytesIO()
+    image.save(out, format="PNG", optimize=True)
+    return "data:image/png;base64," + base64.b64encode(out.getvalue()).decode("ascii")
 
 
 def get_voucher(voucher_id):
@@ -332,11 +442,130 @@ def get_printer_status():
     configured = bool(PRINTER_MAC and PRINTER_SCRIPT.exists() and PRINTER_DRIVER.exists())
     return {
         "configured": configured,
+        "bulk_ready": bool(configured and BULK_PRINTER_SCRIPT.exists()),
         "name": "MX06",
         "mac": PRINTER_MAC,
         "mode": "On-demand BLE",
         "driver": "Ready" if PRINTER_DRIVER.exists() else "Driver missing",
     }
+
+
+@contextmanager
+def printer_process_lock():
+    """Cross-process lock shared by single and bulk MX06 printing."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with PRINTER_LOCK_FILE.open("a+") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError("Printer is busy. Wait for the current print to finish.") from exc
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _job_path(job_id, suffix="status"):
+    safe = str(job_id or "")
+    if len(safe) != 20 or any(ch not in "0123456789abcdef" for ch in safe):
+        return None
+    PRINT_JOB_DIR.mkdir(parents=True, exist_ok=True)
+    return PRINT_JOB_DIR / f"{safe}.{suffix}.json"
+
+
+def _write_job_json(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(path)
+
+
+def get_print_job(job_id):
+    path = _job_path(job_id, "status")
+    if not path or not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def start_bulk_print_job(batch_id):
+    vouchers = get_batch_vouchers(batch_id)
+    if not vouchers:
+        raise RuntimeError("Bulk voucher batch not found.")
+    if not get_printer_status().get("bulk_ready"):
+        raise RuntimeError("MX06 bulk printer helper is not installed.")
+
+    available = available_memory_mb()
+    if available and available < PRINTER_MIN_AVAILABLE_MB:
+        raise RuntimeError(
+            f"Printing paused: only {available} MB RAM is available. Try again after memory pressure drops."
+        )
+
+    job_id = secrets.token_hex(10)
+    payload_path = _job_path(job_id, "payload")
+    status_path = _job_path(job_id, "status")
+    payload = {
+        "job_id": job_id,
+        "batch_id": str(batch_id),
+        "quantity": len(vouchers),
+        "vouchers": [
+            {
+                "code": str(v.get("code") or ""),
+                "validity": str(v.get("plan_name") or "Voucher"),
+                "price": price_for_voucher(v),
+            }
+            for v in vouchers
+        ],
+    }
+    _write_job_json(payload_path, payload)
+    _write_job_json(
+        status_path,
+        {
+            "ok": True,
+            "state": "queued",
+            "job_id": job_id,
+            "batch_id": str(batch_id),
+            "quantity": len(vouchers),
+            "message": f"Preparing {len(vouchers)} vouchers for the MX06.",
+        },
+    )
+
+    command = [
+        sys.executable,
+        str(BULK_PRINTER_SCRIPT),
+        "--payload", str(payload_path),
+        "--status-file", str(status_path),
+        "--mac", PRINTER_MAC,
+        "--driver", str(PRINTER_DRIVER),
+        "--lock-file", str(PRINTER_LOCK_FILE),
+    ]
+    try:
+        subprocess.Popen(
+            command,
+            cwd=str(BULK_PRINTER_SCRIPT.parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except Exception as exc:
+        _write_job_json(
+            status_path,
+            {
+                "ok": False,
+                "state": "error",
+                "job_id": job_id,
+                "batch_id": str(batch_id),
+                "quantity": len(vouchers),
+                "message": f"Could not start bulk printing: {exc}",
+            },
+        )
+        raise RuntimeError(f"Could not start bulk printing: {exc}") from exc
+
+    return job_id, len(vouchers)
 
 
 def print_voucher_receipt(voucher):
@@ -353,28 +582,29 @@ def print_voucher_receipt(voucher):
         raise RuntimeError("Printer is busy. Wait for the current print to finish.")
 
     try:
-        price = price_for_voucher(voucher)
-        command = [
-            sys.executable,
-            str(PRINTER_SCRIPT),
-            "--code", str(voucher.get("code") or ""),
-            "--validity", str(voucher.get("plan_name") or "Voucher"),
-            "--price", price,
-            "--status-url", AURA_STATUS_URL,
-            "--mac", PRINTER_MAC,
-            "--driver", str(PRINTER_DRIVER),
-        ]
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "Unknown printer error").strip().splitlines()
-            raise RuntimeError(detail[-1] if detail else "Printer failed.")
-        return True
+        with printer_process_lock():
+            price = price_for_voucher(voucher)
+            command = [
+                sys.executable,
+                str(PRINTER_SCRIPT),
+                "--code", str(voucher.get("code") or ""),
+                "--validity", str(voucher.get("plan_name") or "Voucher"),
+                "--price", price,
+                "--status-url", AURA_STATUS_URL,
+                "--mac", PRINTER_MAC,
+                "--driver", str(PRINTER_DRIVER),
+            ]
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            if result.returncode != 0:
+                detail = (result.stderr or result.stdout or "Unknown printer error").strip().splitlines()
+                raise RuntimeError(detail[-1] if detail else "Printer failed.")
+            return True
     finally:
         _PRINT_LOCK.release()
 
@@ -1085,6 +1315,120 @@ def admin_generate():
         active_page="generate",
         **snapshot,
     )
+
+
+@app.get("/admin/bulk")
+@login_required
+def admin_bulk():
+    snapshot = get_admin_snapshot()
+    return render_template(
+        "bulk.html",
+        plans=PLANS,
+        batches=get_recent_bulk_batches(8),
+        printer=get_printer_status(),
+        active_page="generate",
+        **snapshot,
+    )
+
+
+@app.post("/admin/bulk/generate")
+@login_required
+def admin_bulk_generate():
+    require_csrf()
+    plan_key = str(request.form.get("plan") or "").strip().lower()
+    try:
+        quantity = int(request.form.get("quantity") or 0)
+    except (TypeError, ValueError):
+        quantity = 0
+
+    plan = PLANS.get(plan_key)
+    allowed_quantities = {10, 20, 30, 40, 50}
+    if not plan:
+        flash("Choose a valid voucher duration.", "error")
+        return redirect(url_for("admin_bulk"))
+    if quantity not in allowed_quantities:
+        flash("Bulk quantity must be 10, 20, 30, 40, or 50 vouchers.", "error")
+        return redirect(url_for("admin_bulk"))
+
+    batch_id = secrets.token_urlsafe(9).replace("-", "").replace("_", "")[:12]
+    try:
+        infos = OmadaClient().create_vouchers(plan["name"], plan["minutes"], quantity)
+        if not infos:
+            raise OmadaError("Omada returned no voucher codes.")
+        save_bulk_vouchers(plan, infos, batch_id)
+        invalidate_admin_snapshot()
+        if len(infos) != quantity:
+            flash(
+                f"Omada returned {len(infos)} of {quantity} requested vouchers. The available codes were saved.",
+                "warning",
+            )
+        else:
+            flash(f"{quantity} {plan['name']} vouchers created. Batch is ready for the MX06.", "success")
+        return redirect(url_for("admin_bulk_batch", batch_id=batch_id))
+    except OmadaError as exc:
+        flash(f"Bulk voucher generation failed: {exc}", "error")
+    except Exception as exc:
+        flash(f"Bulk voucher generation failed: {exc}", "error")
+    return redirect(url_for("admin_bulk"))
+
+
+@app.get("/admin/bulk/<batch_id>")
+@login_required
+def admin_bulk_batch(batch_id):
+    vouchers = get_batch_vouchers(batch_id)
+    if not vouchers:
+        abort(404)
+
+    for voucher in vouchers:
+        voucher["price"] = price_for_voucher(voucher)
+        voucher["qr_data_uri"] = voucher_qr_data_uri(voucher.get("code") or "")
+
+    first = vouchers[0]
+    snapshot = get_admin_snapshot()
+    return render_template(
+        "bulk_batch.html",
+        vouchers=vouchers,
+        batch_id=batch_id,
+        plan_name=first.get("plan_name") or "Voucher",
+        price=price_for_voucher(first),
+        quantity=len(vouchers),
+        printer=get_printer_status(),
+        active_page="generate",
+        **snapshot,
+    )
+
+
+@app.get("/admin/bulk/<batch_id>/sheet")
+@login_required
+def admin_bulk_sheet(batch_id):
+    # Backward-compatible URL from v14 short-bond sheets.
+    return redirect(url_for("admin_bulk_batch", batch_id=batch_id))
+
+
+@app.post("/admin/bulk/<batch_id>/print")
+@login_required
+def admin_bulk_print(batch_id):
+    require_csrf()
+    try:
+        job_id, quantity = start_bulk_print_job(batch_id)
+        return jsonify(
+            ok=True,
+            job_id=job_id,
+            quantity=quantity,
+            status_url=url_for("admin_print_job_status", job_id=job_id),
+            message=f"Printing {quantity} vouchers on the MX06.",
+        )
+    except Exception as exc:
+        return jsonify(ok=False, message=str(exc)), 500
+
+
+@app.get("/admin/print-jobs/<job_id>")
+@login_required
+def admin_print_job_status(job_id):
+    job = get_print_job(job_id)
+    if not job:
+        return jsonify(ok=False, state="error", message="Print job not found."), 404
+    return jsonify(job)
 
 
 @app.get("/admin/vouchers")

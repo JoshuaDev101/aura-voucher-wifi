@@ -1,0 +1,236 @@
+{% extends "admin_base.html" %}
+{% block title %}Aura · Bulk Batch {{ batch_id[:6]|upper }}{% endblock %}
+{% block admin_content %}
+<section class="page-heading bulk-page-heading">
+  <div>
+    <div class="eyebrow">BULK BATCH</div>
+    <h1>{{ quantity }} × {{ plan_name }}</h1>
+    <p>Continuous 57 mm MX06 strip. Cut on the dashed guide after each voucher.</p>
+  </div>
+  <div class="page-heading-actions">
+    <a class="btn secondary" href="{{ url_for('admin_bulk') }}">← Bulk batches</a>
+    <button class="btn primary" id="bulk-print-start" type="button" {% if not printer.bulk_ready %}disabled{% endif %}>Print {{ quantity }} vouchers</button>
+  </div>
+</section>
+
+<section class="bulk-batch-layout">
+  <article class="panel bulk-preview-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">THERMAL PREVIEW</div><h2>Voucher layout</h2></div>
+      <span class="panel-note">384 px · 57 mm</span>
+    </div>
+
+    {% set sample = vouchers[0] %}
+    <div class="thermal-preview-wrap">
+      <div class="thermal-ticket-preview">
+        <div class="thermal-ticket-head">AURA VOUCHER WIFI</div>
+        <div class="thermal-ticket-body">
+          <div class="thermal-ticket-copy">
+            <strong>{{ sample.code }}</strong>
+            <i></i>
+            <span>{{ sample.plan_name }}</span>
+            <b>{{ '₱' ~ sample.price if sample.price else '—' }}</b>
+          </div>
+          <div class="thermal-ticket-qr">
+            {% if sample.qr_data_uri %}<img src="{{ sample.qr_data_uri }}" alt="QR for {{ sample.code }}">{% endif %}
+          </div>
+        </div>
+        <div class="thermal-cut"><span>CUT</span></div>
+      </div>
+    </div>
+
+    <div class="bulk-sheet-summary bulk-batch-summary">
+      <div><span>Quantity</span><strong>{{ quantity }} vouchers</strong></div>
+      <div><span>Plan</span><strong>{{ plan_name }}</strong></div>
+      <div><span>Price</span><strong>{{ '₱' ~ price if price else 'Not set' }}</strong></div>
+      <div><span>Batch</span><strong>{{ batch_id[:8]|upper }}</strong></div>
+    </div>
+
+    <div class="thermal-print-note">
+      <b>Important:</b> keep enough paper loaded before starting. If a connection fails halfway, check what physically printed before using Retry because Retry prints the whole batch again.
+    </div>
+  </article>
+
+  <aside class="panel bulk-codes-panel">
+    <div class="panel-head slim">
+      <div><div class="eyebrow">CODES</div><h2>Batch vouchers</h2></div>
+      <span class="panel-note">{{ quantity }} total</span>
+    </div>
+    <div class="bulk-code-grid">
+      {% for voucher in vouchers %}
+      <div class="bulk-code-chip"><span>{{ loop.index }}</span><strong>{{ voucher.code }}</strong></div>
+      {% endfor %}
+    </div>
+  </aside>
+</section>
+
+<form id="bulk-print-form" action="{{ url_for('admin_bulk_print', batch_id=batch_id) }}" method="post" hidden>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+</form>
+
+<div id="bulk-print-progress" class="print-progress" hidden aria-hidden="true">
+  <div class="print-progress-backdrop"></div>
+  <section class="print-progress-card" role="dialog" aria-modal="true" aria-labelledby="bulk-print-title">
+    <div class="print-progress-visual" aria-hidden="true">
+      <div class="print-progress-spinner"></div>
+      <div class="print-progress-check">✓</div>
+      <div class="print-progress-error">!</div>
+    </div>
+    <div class="print-progress-brandline">
+      <img src="{{ url_for('static', filename='branding/icon.png') }}" alt="" aria-hidden="true">
+      <div class="eyebrow" id="bulk-print-kicker">MX06 BULK PRINT</div>
+    </div>
+    <h2 id="bulk-print-title">Printing {{ quantity }} vouchers</h2>
+    <p id="bulk-print-message" aria-live="polite">Preparing the thermal strip.</p>
+    <div class="print-progress-code" id="bulk-print-count">{{ quantity }} × {{ plan_name }}</div>
+    <div class="print-progress-actions">
+      <button id="bulk-print-retry" class="btn secondary full print-progress-retry" type="button" hidden>↻ Retry Full Batch</button>
+      <button id="bulk-print-close" class="btn primary full print-progress-close" type="button" hidden>Close</button>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const start = document.getElementById('bulk-print-start');
+  const form = document.getElementById('bulk-print-form');
+  const modal = document.getElementById('bulk-print-progress');
+  const title = document.getElementById('bulk-print-title');
+  const message = document.getElementById('bulk-print-message');
+  const kicker = document.getElementById('bulk-print-kicker');
+  const close = document.getElementById('bulk-print-close');
+  const retry = document.getElementById('bulk-print-retry');
+  if (!start || !form || !modal) return;
+
+  let pollTimer = null;
+  let audioContext = null;
+
+  const primeFeedback = () => {
+    try {
+      if (!audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) audioContext = new AudioCtx();
+      }
+      if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+    } catch (_) {}
+  };
+
+  const tone = (frequency, startAt, duration, gainValue = 0.055) => {
+    if (!audioContext) return;
+    try {
+      const osc = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(frequency, audioContext.currentTime + startAt);
+      gain.gain.setValueAtTime(0.0001, audioContext.currentTime + startAt);
+      gain.gain.exponentialRampToValueAtTime(gainValue, audioContext.currentTime + startAt + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + startAt + duration);
+      osc.connect(gain); gain.connect(audioContext.destination);
+      osc.start(audioContext.currentTime + startAt);
+      osc.stop(audioContext.currentTime + startAt + duration + 0.02);
+    } catch (_) {}
+  };
+
+  const feedback = (kind) => {
+    primeFeedback();
+    if (kind === 'success') {
+      tone(659, 0, .13); tone(880, .14, .20);
+      if (navigator.vibrate) navigator.vibrate([55, 35, 85]);
+    } else {
+      tone(220, 0, .16, .06); tone(165, .17, .24, .06);
+      if (navigator.vibrate) navigator.vibrate([170, 70, 170]);
+    }
+  };
+
+  const setState = (state, text) => {
+    modal.dataset.state = state;
+    if (text) message.textContent = text;
+    if (state === 'printing') {
+      kicker.textContent = 'MX06 BULK PRINT';
+      title.textContent = 'Printing {{ quantity }} vouchers';
+      close.hidden = true;
+      retry.hidden = true;
+    } else if (state === 'success') {
+      kicker.textContent = 'BULK PRINT COMPLETE';
+      title.textContent = 'Done printing';
+      close.hidden = false;
+      retry.hidden = true;
+    } else {
+      kicker.textContent = 'BULK PRINT ERROR';
+      title.textContent = 'Could not finish batch';
+      close.hidden = false;
+      retry.hidden = false;
+    }
+  };
+
+  const show = () => {
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('print-modal-open');
+    setState('printing', 'Preparing the thermal voucher strip.');
+  };
+
+  const stopPoll = () => {
+    if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+  };
+
+  const poll = async (url) => {
+    stopPoll();
+    try {
+      const response = await fetch(url, {headers:{'Accept':'application/json'}, credentials:'same-origin'});
+      const payload = await response.json();
+      if (!response.ok || payload.state === 'error' || payload.ok === false) {
+        setState('error', payload.message || 'Bulk printing failed. Check the MX06 and paper.');
+        feedback('error');
+        return;
+      }
+      if (payload.state === 'done') {
+        setState('success', payload.message || 'All vouchers were sent to the MX06.');
+        feedback('success');
+        return;
+      }
+      message.textContent = payload.message || 'Printing vouchers…';
+      pollTimer = setTimeout(() => poll(url), 1000);
+    } catch (_) {
+      setState('error', 'Aura lost the print-job connection. Check the printer before retrying the full batch.');
+      feedback('error');
+    }
+  };
+
+  const begin = async () => {
+    primeFeedback();
+    show();
+    start.disabled = true;
+    try {
+      const data = new FormData(form);
+      const response = await fetch(form.action, {
+        method:'POST', body:data, credentials:'same-origin', headers:{'Accept':'application/json'}
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok || !payload.status_url) {
+        setState('error', payload.message || 'Could not start bulk printing.');
+        feedback('error');
+        return;
+      }
+      message.textContent = payload.message || 'Bulk print started.';
+      poll(payload.status_url);
+    } catch (_) {
+      setState('error', 'Could not start the bulk print job. Check Aura and the MX06.');
+      feedback('error');
+    } finally {
+      start.disabled = false;
+    }
+  };
+
+  start.addEventListener('click', begin);
+  retry.addEventListener('click', begin);
+  close.addEventListener('click', () => {
+    stopPoll();
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('print-modal-open');
+  });
+})();
+</script>
+{% endblock %}
