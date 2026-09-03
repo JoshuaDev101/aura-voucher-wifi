@@ -89,8 +89,8 @@ def _default_redeem_url():
 AURA_REDEEM_URL = os.environ.get("AURA_REDEEM_URL", _default_redeem_url()).strip()
 AURA_CAPTIVE_TRIGGER_URL = os.environ.get(
     "AURA_CAPTIVE_TRIGGER_URL",
-    "http://neverssl.com/",
-).strip() or "http://neverssl.com/"
+    "http://connectivitycheck.gstatic.com/generate_204",
+).strip() or "http://connectivitycheck.gstatic.com/generate_204"
 PRINTER_MIN_AVAILABLE_MB = int(os.environ.get("AURA_PRINTER_MIN_AVAILABLE_MB", "64"))
 PRINT_JOB_DIR = DATA_DIR / "print-jobs"
 PRINTER_LOCK_FILE = DATA_DIR / "mx06-printer.lock"
@@ -1207,17 +1207,27 @@ def customer_status():
 
 @app.get("/redeem")
 def redeem_voucher():
-    """Bridge a printed QR into Omada's dynamic captive portal.
+    """Open a printed QR voucher with the least-visible captive bridge possible.
 
-    If Omada intercepts the QR request first, its portal receives the original
-    redeem URL in originUrl and the custom portal can extract the code there.
-    If Aura receives this request first, store the code in a short-lived cookie
-    (cookies are shared across ports on the same host) and visit a plain-HTTP
-    captive trigger so Omada can open the correct portal session.
+    An already-authorized client goes straight to /status, so it never lands on
+    the captive-trigger site. An unauthenticated client stores the scanned code
+    briefly, then opens a plain-HTTP connectivity check which Omada intercepts.
+    The matching custom portal reads the code and auto-submits it.
     """
     code = str(request.args.get("code", "")).strip()
     if not code or len(code) > 64 or any(ch.isspace() for ch in code):
         return redirect(url_for("customer_status"))
+
+    # If this phone is already authorized, never send it to the captive trigger.
+    # This also fixes the old behavior where an already-connected test phone
+    # could visibly end up on NeverSSL.
+    try:
+        customer = format_customer_status(request.remote_addr)
+        if customer.get("state") == "active":
+            return redirect(url_for("customer_status"), code=302)
+    except Exception:
+        # If status detection fails, still allow the normal captive flow below.
+        pass
 
     separator = "&" if "?" in AURA_CAPTIVE_TRIGGER_URL else "?"
     target = f"{AURA_CAPTIVE_TRIGGER_URL}{separator}{urlencode({'aura_voucher': code})}"
