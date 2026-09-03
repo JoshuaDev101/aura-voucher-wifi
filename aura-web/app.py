@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, abort, jsonify
 from functools import wraps
 from datetime import datetime
+from urllib.parse import urlencode, urlsplit, urlunsplit
 from pathlib import Path
 from threading import Lock
 from contextlib import contextmanager
@@ -72,6 +73,24 @@ PRINTER_DRIVER = Path(os.environ.get("AURA_PRINTER_DRIVER", "/opt/aura-printer-t
 PRINTER_SCRIPT = Path(__file__).with_name("printer_mx06.py")
 BULK_PRINTER_SCRIPT = Path(__file__).with_name("printer_mx06_bulk.py")
 AURA_STATUS_URL = os.environ.get("AURA_STATUS_URL", "http://192.168.1.124/status").strip()
+
+
+def _default_redeem_url():
+    """Build a stable local redeem endpoint from the configured status URL."""
+    try:
+        parsed = urlsplit(AURA_STATUS_URL)
+        if parsed.scheme and parsed.netloc:
+            return urlunsplit((parsed.scheme, parsed.netloc, "/redeem", "", ""))
+    except Exception:
+        pass
+    return "http://192.168.1.124/redeem"
+
+
+AURA_REDEEM_URL = os.environ.get("AURA_REDEEM_URL", _default_redeem_url()).strip()
+AURA_CAPTIVE_TRIGGER_URL = os.environ.get(
+    "AURA_CAPTIVE_TRIGGER_URL",
+    "http://neverssl.com/",
+).strip() or "http://neverssl.com/"
 PRINTER_MIN_AVAILABLE_MB = int(os.environ.get("AURA_PRINTER_MIN_AVAILABLE_MB", "64"))
 PRINT_JOB_DIR = DATA_DIR / "print-jobs"
 PRINTER_LOCK_FILE = DATA_DIR / "mx06-printer.lock"
@@ -388,12 +407,15 @@ def get_recent_bulk_batches(limit=6):
     return result
 
 
-def voucher_qr_data_uri(code):
-    """Create a small local QR containing only the voucher code.
+def voucher_redeem_url(code):
+    """Return the local QR redeem URL for one voucher code."""
+    code = str(code or "").strip()
+    separator = "&" if "?" in AURA_REDEEM_URL else "?"
+    return f"{AURA_REDEEM_URL}{separator}{urlencode({'code': code})}"
 
-    The QR is intentionally self-contained: no external QR service and no
-    Internet dependency. Scanning it reveals/copies the exact voucher code.
-    """
+
+def voucher_qr_data_uri(code):
+    """Create a local QR that opens Aura redeem with this code pre-filled."""
     try:
         import qrcode
     except ImportError:
@@ -403,9 +425,9 @@ def voucher_qr_data_uri(code):
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=4,
-        border=1,
+        border=2,
     )
-    qr.add_data(str(code))
+    qr.add_data(voucher_redeem_url(code))
     qr.make(fit=True)
     image = qr.make_image(fill_color="black", back_color="white").convert("L")
     out = io.BytesIO()
@@ -515,6 +537,7 @@ def start_bulk_print_job(batch_id):
                 "code": str(v.get("code") or ""),
                 "validity": str(v.get("plan_name") or "Voucher"),
                 "price": price_for_voucher(v),
+                "qr_url": voucher_redeem_url(v.get("code") or ""),
             }
             for v in vouchers
         ],
@@ -1180,6 +1203,36 @@ def home():
 @app.get("/status")
 def customer_status():
     return render_customer_page()
+
+
+@app.get("/redeem")
+def redeem_voucher():
+    """Bridge a printed QR into Omada's dynamic captive portal.
+
+    If Omada intercepts the QR request first, its portal receives the original
+    redeem URL in originUrl and the custom portal can extract the code there.
+    If Aura receives this request first, store the code in a short-lived cookie
+    (cookies are shared across ports on the same host) and visit a plain-HTTP
+    captive trigger so Omada can open the correct portal session.
+    """
+    code = str(request.args.get("code", "")).strip()
+    if not code or len(code) > 64 or any(ch.isspace() for ch in code):
+        return redirect(url_for("customer_status"))
+
+    separator = "&" if "?" in AURA_CAPTIVE_TRIGGER_URL else "?"
+    target = f"{AURA_CAPTIVE_TRIGGER_URL}{separator}{urlencode({'aura_voucher': code})}"
+    response = redirect(target, code=302)
+    response.set_cookie(
+        "aura_voucher_code",
+        code,
+        max_age=10 * 60,
+        path="/",
+        secure=False,
+        httponly=False,
+        samesite="Lax",
+    )
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 @app.get("/health")

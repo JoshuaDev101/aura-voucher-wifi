@@ -76,20 +76,27 @@ def write_status(path: Path, payload: dict):
     tmp.replace(path)
 
 
-def build_qr(code: str, target: int = 118):
+def build_qr(value: str, target: int = 118):
+    """Render QR modules at an integer scale for reliable thermal scanning."""
     import qrcode
     from PIL import Image
 
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=4,
-        border=1,
+        box_size=1,
+        border=2,
     )
-    qr.add_data(str(code))
+    qr.add_data(str(value))
     qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white").convert("L")
-    return img.resize((target, target), resample=Image.Resampling.NEAREST)
+    raw = qr.make_image(fill_color="black", back_color="white").convert("L")
+    scale = max(1, target // raw.width)
+    size = raw.width * scale
+    scaled = raw.resize((size, size), resample=Image.Resampling.NEAREST)
+    canvas = Image.new("L", (target, target), 255)
+    offset = (target - size) // 2
+    canvas.paste(scaled, (offset, offset))
+    return canvas
 
 
 def build_strip(vouchers):
@@ -136,9 +143,10 @@ def build_strip(vouchers):
         draw.text((left_x, body_top + 88), validity, fill=0, font=label_font)
         draw.text((left_x, body_top + 112), price, fill=0, font=price_font)
 
-        # Right column: QR containing the voucher code itself.
+        # Right column: QR opens Aura redeem with this voucher pre-filled.
         qr_size = 118
-        qr = build_qr(code, qr_size)
+        qr_value = str(voucher.get("qr_url") or code).strip()
+        qr = build_qr(qr_value, qr_size)
         qr_x = card_right - qr_size - 15
         qr_y = body_top + 14
         draw.rectangle((qr_x - 3, qr_y - 3, qr_x + qr_size + 2, qr_y + qr_size + 2), outline=0, width=1)

@@ -5,7 +5,7 @@
   <div>
     <div class="eyebrow">BULK BATCH</div>
     <h1>{{ quantity }} × {{ plan_name }}</h1>
-    <p>Continuous 57 mm MX06 strip. Cut on the dashed guide after each voucher.</p>
+    <p>Continuous 57 mm MX06 strip. Each QR opens Aura voucher login with its code pre-filled.</p>
   </div>
   <div class="page-heading-actions">
     <a class="btn secondary" href="{{ url_for('admin_bulk') }}">← Bulk batches</a>
@@ -32,7 +32,7 @@
             <b>{{ '₱' ~ sample.price if sample.price else '—' }}</b>
           </div>
           <div class="thermal-ticket-qr">
-            {% if sample.qr_data_uri %}<img src="{{ sample.qr_data_uri }}" alt="QR for {{ sample.code }}">{% endif %}
+            {% if sample.qr_data_uri %}<img src="{{ sample.qr_data_uri }}" alt="Redeem QR for {{ sample.code }}">{% endif %}
           </div>
         </div>
         <div class="thermal-cut"><span>CUT</span></div>
@@ -46,6 +46,9 @@
       <div><span>Batch</span><strong>{{ batch_id[:8]|upper }}</strong></div>
     </div>
 
+    <div class="thermal-print-note">
+      <b>QR flow:</b> customer connects to Aura Voucher WiFi, scans the QR, then the Omada voucher page opens with the printed code already filled in. They only tap Connect.
+    </div>
     <div class="thermal-print-note">
       <b>Important:</b> keep enough paper loaded before starting. If a connection fails halfway, check what physically printed before using Retry because Retry prints the whole batch again.
     </div>
