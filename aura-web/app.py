@@ -490,23 +490,12 @@ def get_print_job(job_id):
         return None
 
 
-def start_bulk_print_job(batch_id, start_index=1, end_index=None, mode="full"):
+def start_bulk_print_job(batch_id):
     vouchers = get_batch_vouchers(batch_id)
     if not vouchers:
         raise RuntimeError("Bulk voucher batch not found.")
     if not get_printer_status().get("bulk_ready"):
         raise RuntimeError("MX06 bulk printer helper is not installed.")
-
-    quantity = len(vouchers)
-    try:
-        start_index = int(start_index or 1)
-        end_index = quantity if end_index in (None, "") else int(end_index)
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError("Invalid bulk print range.") from exc
-    if start_index < 1 or end_index > quantity or start_index > end_index:
-        raise RuntimeError(f"Print range must be between 1 and {quantity}.")
-    if mode not in {"full", "resume", "reprint"}:
-        mode = "full"
 
     available = available_memory_mb()
     if available and available < PRINTER_MIN_AVAILABLE_MB:
@@ -517,14 +506,10 @@ def start_bulk_print_job(batch_id, start_index=1, end_index=None, mode="full"):
     job_id = secrets.token_hex(10)
     payload_path = _job_path(job_id, "payload")
     status_path = _job_path(job_id, "status")
-    control_path = _job_path(job_id, "control")
     payload = {
         "job_id": job_id,
         "batch_id": str(batch_id),
-        "quantity": quantity,
-        "start_index": start_index,
-        "end_index": end_index,
-        "mode": mode,
+        "quantity": len(vouchers),
         "vouchers": [
             {
                 "code": str(v.get("code") or ""),
@@ -535,8 +520,6 @@ def start_bulk_print_job(batch_id, start_index=1, end_index=None, mode="full"):
         ],
     }
     _write_job_json(payload_path, payload)
-    _write_job_json(control_path, {"action": "run"})
-    target_count = end_index - start_index + 1
     _write_job_json(
         status_path,
         {
@@ -544,18 +527,8 @@ def start_bulk_print_job(batch_id, start_index=1, end_index=None, mode="full"):
             "state": "queued",
             "job_id": job_id,
             "batch_id": str(batch_id),
-            "quantity": quantity,
-            "start_index": start_index,
-            "end_index": end_index,
-            "target_count": target_count,
-            "mode": mode,
-            "completed": start_index - 1,
-            "next_index": start_index,
-            "message": (
-                f"Preparing voucher #{start_index}."
-                if target_count == 1
-                else f"Preparing vouchers {start_index}–{end_index} for the MX06."
-            ),
+            "quantity": len(vouchers),
+            "message": f"Preparing {len(vouchers)} vouchers for the MX06.",
         },
     )
 
@@ -564,7 +537,6 @@ def start_bulk_print_job(batch_id, start_index=1, end_index=None, mode="full"):
         str(BULK_PRINTER_SCRIPT),
         "--payload", str(payload_path),
         "--status-file", str(status_path),
-        "--control-file", str(control_path),
         "--mac", PRINTER_MAC,
         "--driver", str(PRINTER_DRIVER),
         "--lock-file", str(PRINTER_LOCK_FILE),
@@ -587,34 +559,14 @@ def start_bulk_print_job(batch_id, start_index=1, end_index=None, mode="full"):
                 "state": "error",
                 "job_id": job_id,
                 "batch_id": str(batch_id),
-                "quantity": quantity,
-                "start_index": start_index,
-                "end_index": end_index,
-                "mode": mode,
-                "completed": start_index - 1,
-                "failed_index": start_index,
-                "next_index": start_index,
+                "quantity": len(vouchers),
                 "message": f"Could not start bulk printing: {exc}",
             },
         )
         raise RuntimeError(f"Could not start bulk printing: {exc}") from exc
 
-    return job_id, quantity
+    return job_id, len(vouchers)
 
-
-def control_print_job(job_id, action):
-    if action not in {"pause", "resume", "cancel"}:
-        raise RuntimeError("Unknown print control action.")
-    job = get_print_job(job_id)
-    if not job:
-        raise RuntimeError("Print job not found.")
-    if job.get("state") in {"done", "error", "cancelled"}:
-        raise RuntimeError("This print job is no longer running.")
-    control_path = _job_path(job_id, "control")
-    if not control_path:
-        raise RuntimeError("Invalid print job.")
-    _write_job_json(control_path, {"action": "run" if action == "resume" else action})
-    return True
 
 def print_voucher_receipt(voucher):
     if not get_printer_status()["configured"]:
@@ -1458,26 +1410,13 @@ def admin_bulk_sheet(batch_id):
 def admin_bulk_print(batch_id):
     require_csrf()
     try:
-        start_index = request.form.get("start_index", "1")
-        end_index = request.form.get("end_index", "")
-        mode = request.form.get("mode", "full")
-        job_id, quantity = start_bulk_print_job(
-            batch_id,
-            start_index=start_index,
-            end_index=end_index,
-            mode=mode,
-        )
-        job = get_print_job(job_id) or {}
+        job_id, quantity = start_bulk_print_job(batch_id)
         return jsonify(
             ok=True,
             job_id=job_id,
             quantity=quantity,
-            start_index=job.get("start_index", 1),
-            end_index=job.get("end_index", quantity),
-            mode=job.get("mode", mode),
             status_url=url_for("admin_print_job_status", job_id=job_id),
-            control_url=url_for("admin_print_job_control", job_id=job_id),
-            message=job.get("message") or "Bulk print started.",
+            message=f"Printing {quantity} vouchers on the MX06.",
         )
     except Exception as exc:
         return jsonify(ok=False, message=str(exc)), 500
@@ -1489,20 +1428,7 @@ def admin_print_job_status(job_id):
     job = get_print_job(job_id)
     if not job:
         return jsonify(ok=False, state="error", message="Print job not found."), 404
-    job["control_url"] = url_for("admin_print_job_control", job_id=job_id)
     return jsonify(job)
-
-
-@app.post("/admin/print-jobs/<job_id>/control")
-@login_required
-def admin_print_job_control(job_id):
-    require_csrf()
-    action = str(request.form.get("action") or "").strip().lower()
-    try:
-        control_print_job(job_id, action)
-        return jsonify(ok=True, action=action)
-    except Exception as exc:
-        return jsonify(ok=False, message=str(exc)), 400
 
 
 @app.get("/admin/vouchers")
