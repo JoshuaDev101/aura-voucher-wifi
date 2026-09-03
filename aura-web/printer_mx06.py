@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""One-shot MX06 voucher receipt printer.
+"""One-shot MX06 single voucher printer.
 
-This process is intentionally short-lived: render one 384px receipt, connect,
-print, disconnect, exit. The Aura web process does not import Pillow/qrcode.
+Uses the same compact 384px ticket layout as Aura bulk printing:
+- black AURA VOUCHER WIFI header
+- large voucher code
+- validity + price
+- QR redeem URL with voucher code pre-filled
+- dashed CUT guide
 """
 
 from __future__ import annotations
@@ -12,6 +16,17 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit, urlencode
+
+WIDTH = 384
+LEFT = 8
+RIGHT = 8
+TOP_FEED = 8
+BOTTOM_FEED = 28
+ROW_HEIGHT = 226
+HEADER_HEIGHT = 34
+BODY_HEIGHT = 158
+CUT_Y_OFFSET = 214
 
 
 def parse_args():
@@ -22,6 +37,7 @@ def parse_args():
     parser.add_argument("--status-url", required=True)
     parser.add_argument("--mac", required=True)
     parser.add_argument("--driver", required=True)
+    parser.add_argument("--render-only", default="")
     return parser.parse_args()
 
 
@@ -46,96 +62,171 @@ def load_font(size: int, bold: bool = False):
 
 
 def text_width(draw, text, font):
-    box = draw.textbbox((0, 0), text, font=font)
+    box = draw.textbbox((0, 0), str(text), font=font)
     return box[2] - box[0]
 
 
-def centered(draw, y, text, font, width=384):
-    x = max(0, (width - text_width(draw, text, font)) // 2)
-    draw.text((x, y), text, fill=0, font=font)
+def centered_x(draw, text, font, left=0, right=WIDTH):
+    available = right - left
+    return left + max(0, (available - text_width(draw, text, font)) // 2)
 
 
-def build_receipt(code: str, validity: str, price: str, status_url: str):
-    """Render a compact 57 mm / 384 px voucher receipt.
-
-    Keep paper use low: only the Aura title, voucher code, validity, price,
-    and a small status QR are printed. No footer paragraphs or large gaps.
-    """
+def build_redeem_url(status_url: str, code: str) -> str:
+    """Convert http://host/status into http://host/redeem?code=XXXXXX."""
+    raw = str(status_url or "").strip()
     try:
-        from PIL import Image, ImageDraw
-        import qrcode
-    except ImportError as exc:
-        raise RuntimeError(
-            "Printer dependencies missing. Install Pillow and qrcode in the Aura venv."
-        ) from exc
+        parsed = urlsplit(raw)
+        if parsed.scheme and parsed.netloc:
+            return urlunsplit(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    "/redeem",
+                    urlencode({"code": str(code)}),
+                    "",
+                )
+            )
+    except Exception:
+        pass
 
-    width = 384
-    height = 420
-    image = Image.new("L", (width, height), 255)
-    draw = ImageDraw.Draw(image)
+    base = raw.rstrip("/")
+    if base.endswith("/status"):
+        base = base[:-7]
+    return f"{base}/redeem?{urlencode({'code': str(code)})}"
 
-    title = load_font(28, bold=True)
-    label = load_font(16, bold=True)
-    code_font = load_font(64, bold=True)
-    value_font = load_font(25, bold=True)
 
-    # Header — tight but still readable on 57 mm paper.
-    centered(draw, 10, "AURA WIFI VOUCHER", title, width)
-    draw.line((24, 52, width - 24, 52), fill=0, width=2)
+def build_qr(value: str, target: int = 118):
+    """Render QR modules at integer scale for reliable thermal scanning."""
+    import qrcode
+    from PIL import Image
 
-    # Voucher code is the visual focus.
-    centered(draw, 65, code, code_font, width)
-
-    # Validity + price share one compact row.
-    left_center = 110
-    right_center = 274
-    validity_text = validity.upper()
-    price_text = f"₱{price}" if price else "—"
-
-    lw = text_width(draw, "VALIDITY", label)
-    pw = text_width(draw, "PRICE", label)
-    draw.text((left_center - lw // 2, 150), "VALIDITY", fill=0, font=label)
-    draw.text((right_center - pw // 2, 150), "PRICE", fill=0, font=label)
-
-    vw = text_width(draw, validity_text, value_font)
-    rw = text_width(draw, price_text, value_font)
-    draw.text((left_center - vw // 2, 177), validity_text, fill=0, font=value_font)
-    draw.text((right_center - rw // 2, 177), price_text, fill=0, font=value_font)
-
-    draw.line((24, 216, width - 24, 216), fill=0, width=1)
-
-    # Small QR keeps the receipt useful without wasting paper.
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=3,
-        border=1,
+        box_size=1,
+        border=2,
     )
-    qr.add_data(status_url)
+    qr.add_data(str(value))
     qr.make(fit=True)
-    qr_img = qr.make_image(fill_color="black", back_color="white").convert("L")
-    qr_img = qr_img.resize((168, 168), resample=Image.Resampling.NEAREST)
-    qx = (width - qr_img.width) // 2
-    image.paste(qr_img, (qx, 230))
 
-    # Small bottom feed area only; no marketing/footer copy.
-    return image.convert("1", dither=Image.Dither.NONE)
+    raw = qr.make_image(fill_color="black", back_color="white").convert("L")
+    scale = max(1, target // raw.width)
+    size = raw.width * scale
+    scaled = raw.resize((size, size), resample=Image.Resampling.NEAREST)
+
+    canvas = Image.new("L", (target, target), 255)
+    offset = (target - size) // 2
+    canvas.paste(scaled, (offset, offset))
+    return canvas
+
+
+def build_ticket(code: str, validity: str, price_raw: str, status_url: str):
+    from PIL import Image, ImageDraw
+
+    height = TOP_FEED + ROW_HEIGHT + BOTTOM_FEED
+    image = Image.new("L", (WIDTH, height), 255)
+    draw = ImageDraw.Draw(image)
+
+    header_font = load_font(18, bold=True)
+    code_font = load_font(46, bold=True)
+    label_font = load_font(17, bold=False)
+    price_font = load_font(27, bold=True)
+    cut_font = load_font(11, bold=True)
+
+    y = TOP_FEED
+    card_top = y + 4
+    card_bottom = y + HEADER_HEIGHT + BODY_HEIGHT + 4
+    card_left = LEFT
+    card_right = WIDTH - RIGHT
+
+    # Same ticket frame/header as bulk.
+    draw.rectangle((card_left, card_top, card_right - 1, card_bottom), outline=0, width=2)
+    draw.rectangle(
+        (card_left + 1, card_top + 1, card_right - 2, card_top + HEADER_HEIGHT),
+        fill=0,
+    )
+
+    title = "AURA VOUCHER WIFI"
+    tx = centered_x(draw, title, header_font, card_left, card_right)
+    draw.text((tx, card_top + 6), title, fill=255, font=header_font)
+
+    body_top = card_top + HEADER_HEIGHT + 1
+
+    code = str(code or "").strip()
+    validity = str(validity or "Voucher").strip()
+    price_raw = str(price_raw or "").strip()
+    price = f"₱{price_raw}" if price_raw else "—"
+
+    # Left column.
+    left_x = card_left + 18
+    draw.text((left_x, body_top + 21), code, fill=0, font=code_font)
+    draw.line((left_x, body_top + 76, left_x + 82, body_top + 76), fill=0, width=2)
+    draw.text((left_x, body_top + 88), validity, fill=0, font=label_font)
+    draw.text((left_x, body_top + 112), price, fill=0, font=price_font)
+
+    # Right column QR: opens /redeem with this voucher pre-filled.
+    qr_size = 118
+    qr_value = build_redeem_url(status_url, code)
+    qr = build_qr(qr_value, qr_size)
+    qr_x = card_right - qr_size - 15
+    qr_y = body_top + 14
+    draw.rectangle(
+        (qr_x - 3, qr_y - 3, qr_x + qr_size + 2, qr_y + qr_size + 2),
+        outline=0,
+        width=1,
+    )
+    image.paste(qr, (qr_x, qr_y))
+
+    # Same dashed cutting guide as bulk.
+    cut_y = y + CUT_Y_OFFSET
+    dash = 12
+    gap = 8
+    x = 4
+    while x < WIDTH - 4:
+        draw.line((x, cut_y, min(x + dash, WIDTH - 4), cut_y), fill=0, width=1)
+        x += dash + gap
+
+    cut_text = "CUT"
+    cw = text_width(draw, cut_text, cut_font)
+    cx = (WIDTH - cw) // 2
+    draw.rectangle((cx - 7, cut_y - 8, cx + cw + 7, cut_y + 8), fill=255)
+    draw.text((cx, cut_y - 7), cut_text, fill=0, font=cut_font)
+
+    return image.convert("1", dither=Image.Dither.NONE), qr_value
 
 
 def main():
     args = parse_args()
     driver = Path(args.driver)
-    if not driver.exists():
+
+    if not driver.exists() and not args.render_only:
         raise RuntimeError(f"MX06 driver not found: {driver}")
 
-    receipt = build_receipt(args.code, args.validity, args.price, args.status_url)
+    ticket, qr_value = build_ticket(
+        args.code,
+        args.validity,
+        args.price,
+        args.status_url,
+    )
+
+    if args.render_only:
+        output = Path(args.render_only)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        ticket.save(output, format="PNG")
+        print(qr_value)
+        return 0
+
     temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(prefix="aura-voucher-", suffix=".pbm", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(
+            prefix="aura-single-",
+            suffix=".pbm",
+            delete=False,
+        ) as tmp:
             temp_path = Path(tmp.name)
-        receipt.save(temp_path, format="PPM")
 
-        # This exact Cat-Printer CLI path/protocol was physically verified on the MX06.
+        ticket.save(temp_path, format="PPM")
+
         command = [
             sys.executable,
             str(driver),
@@ -146,20 +237,23 @@ def main():
             "-q",
             "2",
         ]
+
         result = subprocess.run(
             command,
             text=True,
             capture_output=True,
-            timeout=45,
+            timeout=60,
             check=False,
             cwd=str(driver.parent),
         )
+
         if result.returncode != 0:
             output = (result.stderr or result.stdout or "Printer driver failed").strip()
             raise RuntimeError(output.splitlines()[-1] if output else "Printer driver failed")
 
         print("Printed successfully")
         return 0
+
     finally:
         if temp_path:
             try:
